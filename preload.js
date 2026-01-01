@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('maximize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  fetchSubtitles: (options) => ipcRenderer.invoke('fetch-subtitles', options)
+  fetchSubtitles: (options) => ipcRenderer.invoke('fetch-subtitles', options),
+  discordSetPresence: (presence) => ipcRenderer.invoke('discord-set-presence', presence),
+  discordClearPresence: () => ipcRenderer.invoke('discord-clear-presence')
 });
 

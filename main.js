@@ -2,6 +2,70 @@ const { app, BrowserWindow, ipcMain, shell, net } = require('electron');
 const path = require('path');
 
 let mainWindow;
+let rpcClient = null;
+let RPC = null;
+
+// Try to load discord-rpc (optional dependency)
+try {
+  RPC = require('discord-rpc');
+} catch (error) {
+  console.log('Discord RPC not available:', error.message);
+}
+
+// Discord Rich Presence Client ID
+// To use your own custom assets, create a Discord application at https://discord.com/developers/applications
+// and replace this with your Client ID
+const DISCORD_CLIENT_ID = '1456220475645497354'; // Placeholder - users should replace with their own
+
+// Initialize Discord Rich Presence
+function initDiscordRPC() {
+  if (!RPC) {
+    console.log('Discord RPC not available - skipping initialization');
+    return;
+  }
+  
+  try {
+    rpcClient = new RPC.Client({ transport: 'ipc' });
+    
+    rpcClient.on('ready', () => {
+      console.log('Discord Rich Presence connected');
+    });
+    
+    rpcClient.login({ clientId: DISCORD_CLIENT_ID }).catch(err => {
+      console.log('Discord RPC login failed (this is OK if Discord is not running):', err.message);
+      rpcClient = null;
+    });
+  } catch (error) {
+    console.log('Discord RPC initialization failed (this is OK if Discord is not running):', error.message);
+    rpcClient = null;
+  }
+}
+
+// Update Discord Rich Presence
+function updateDiscordPresence(presence) {
+  if (!rpcClient) return;
+  
+  try {
+    rpcClient.setActivity(presence).catch(err => {
+      console.log('Failed to update Discord presence:', err.message);
+    });
+  } catch (error) {
+    console.log('Error updating Discord presence:', error.message);
+  }
+}
+
+// Clear Discord Rich Presence
+function clearDiscordPresence() {
+  if (!rpcClient) return;
+  
+  try {
+    rpcClient.clearActivity().catch(err => {
+      console.log('Failed to clear Discord presence:', err.message);
+    });
+  } catch (error) {
+    console.log('Error clearing Discord presence:', error.message);
+  }
+}
 
 // Helper function to make HTTP requests from main process (bypasses CORS)
 async function fetchFromMain(url, options = {}) {
@@ -88,6 +152,15 @@ function createWindow() {
     await shell.openExternal(url);
   });
 
+  // Handle Discord Rich Presence updates
+  ipcMain.handle('discord-set-presence', async (event, presence) => {
+    updateDiscordPresence(presence);
+  });
+
+  ipcMain.handle('discord-clear-presence', async (event) => {
+    clearDiscordPresence();
+  });
+
   // Handle subtitle fetching (bypasses CORS)
   ipcMain.handle('fetch-subtitles', async (event, { type, tmdbId, imdbId, apiKey, season, episode }) => {
     try {
@@ -171,10 +244,16 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  initDiscordRPC();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    if (rpcClient) {
+      rpcClient.destroy().catch(() => {});
+    }
     app.quit();
   }
 });

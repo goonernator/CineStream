@@ -1,6 +1,6 @@
 // API Configuration
 // Get your free TMDB API key at: https://www.themoviedb.org/settings/api
-const TMDB_API_KEY = 'YOUR_TMDB_API_KEY_HERE';
+const TMDB_API_KEY = '111909b8747aeff1169944069465906c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
@@ -8,6 +8,9 @@ const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
 // OpenSubtitles API (Optional) - Get your free API key at: https://www.opensubtitles.com/consumers
 const OPENSUBTITLES_API_KEY = ''; // Leave empty to use Subdl fallback, or add your OpenSubtitles API key
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
+
+// Discord Rich Presence - GitHub Repository URL
+const GITHUB_REPO_URL = 'https://github.com/goonernator/CineStream'; // Replace with your GitHub repository URL
 
 // DOM Elements
 const searchInput = document.getElementById('search-input');
@@ -1598,6 +1601,9 @@ function hidePlayer() {
   // Clear subtitle tracks
   currentSubtitles = [];
   
+  // Set Discord Rich Presence back to browsing
+  setDiscordBrowsing();
+  
   playerContainer.classList.add('hidden');
   if (currentMovie) {
     movieDetails.classList.remove('hidden');
@@ -2276,6 +2282,144 @@ function processStreams(streamData) {
 
 // Initialize
 console.log('🎬 CineStream initialized');
+
+// ==================== DISCORD RICH PRESENCE ====================
+
+// Set browsing status when not watching anything
+function setDiscordBrowsing() {
+  const presence = {
+    type: 0, // 0 = playing fuck bot api for not allowing type 3.
+    details: 'Browsing Library',
+    largeImageKey: 'cinestream',
+    largeImageText: 'CineStream'
+  };
+  
+  // Add buttons if GitHub URL is configured
+  if (GITHUB_REPO_URL) {
+    presence.buttons = [
+      {
+        label: 'Get CineStream',
+        url: GITHUB_REPO_URL
+      }
+    ];
+  }
+  
+  if (window.electronAPI && window.electronAPI.discordSetPresence) {
+    window.electronAPI.discordSetPresence(presence);
+  }
+}
+
+function updateDiscordPresence(state, details = null) {
+  if (!currentMovie) return;
+  
+  const title = currentMovie.title || currentMovie.name;
+  
+  // Only show episode info for TV shows, nothing for movies
+  let presenceDetails = details;
+  if (!presenceDetails && currentMediaType === 'tv') {
+    presenceDetails = `S${currentSeason}:E${currentEpisode}`;
+  }
+  
+  const presence = {
+    type: 0, // 0 = playing fuck bot api for not allowing type 3.
+    details: `Watching ${title}`.length > 128 ? `Watching ${title}`.substring(0, 125) + '...' : `Watching ${title}`,
+    largeImageKey: 'cinestream', // users can set custom assets via Discord Developer Portal
+    largeImageText: title,
+    smallImageKey: state === 'playing' ? 'play' : 'pause',
+    smallImageText: state === 'playing' ? 'Watching' : 'Paused'
+  };
+  
+  // Only add state if we have episode info
+  if (presenceDetails) {
+    presence.state = presenceDetails;
+  }
+  
+  // Timestamps ONLY for playing state (seconds)
+  if (state === 'playing') {
+    const now = Math.floor(Date.now() / 1000);
+    
+    if (videoPlayer && videoPlayer.duration > 0 && !isNaN(videoPlayer.duration)) {
+      const durationSec = Math.floor(videoPlayer.duration);
+      const currentSec = Math.floor(videoPlayer.currentTime || 0);
+      presence.startTimestamp = now - currentSec;
+      presence.endTimestamp = presence.startTimestamp + durationSec;
+    } else if (currentMovie && currentMovie.runtime) {
+      const durationSec = currentMovie.runtime * 60;
+      presence.startTimestamp = now;
+      presence.endTimestamp = presence.startTimestamp + durationSec;
+    } else if (currentMediaType === 'tv') {
+      const durationSec = 45 * 60;
+      presence.startTimestamp = now;
+      presence.endTimestamp = presence.startTimestamp + durationSec;
+    }
+  }
+  
+  // Add buttons if GitHub URL is configured
+  if (GITHUB_REPO_URL) {
+    presence.buttons = [
+      {
+        label: 'Get CineStream',
+        url: GITHUB_REPO_URL
+      }
+    ];
+  }
+  
+  if (window.electronAPI && window.electronAPI.discordSetPresence) {
+    window.electronAPI.discordSetPresence(presence);
+  }
+}
+
+function clearDiscordPresence() {
+  if (window.electronAPI && window.electronAPI.discordClearPresence) {
+    window.electronAPI.discordClearPresence();
+  }
+}
+
+// Setup video player event listeners for Discord Rich Presence
+function setupDiscordPresenceListeners() {
+  if (!videoPlayer) {
+    console.warn('Video player not found, Discord RPC listeners not set up');
+    return;
+  }
+  
+  videoPlayer.addEventListener('play', () => {
+    // Small delay to ensure duration is available
+    setTimeout(() => updateDiscordPresence('playing'), 500);
+  });
+  
+  videoPlayer.addEventListener('pause', () => {
+    updateDiscordPresence('paused');
+  });
+  
+  videoPlayer.addEventListener('ended', () => {
+    setDiscordBrowsing();
+  });
+  
+  // Update countdown when user seeks in the video
+  videoPlayer.addEventListener('seeked', () => {
+    if (!videoPlayer.paused) {
+      updateDiscordPresence('playing');
+    }
+  });
+  
+  // Update presence when duration becomes available
+  videoPlayer.addEventListener('durationchange', () => {
+    if (!videoPlayer.paused && videoPlayer.duration > 0) {
+      updateDiscordPresence('playing');
+    }
+  });
+}
+
+// Initialize Discord Rich Presence listeners (after DOM is ready)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setupDiscordPresenceListeners();
+    setDiscordBrowsing(); // Show browsing status on app start
+  });
+} else {
+  setupDiscordPresenceListeners();
+  setDiscordBrowsing(); // Show browsing status on app start
+}
 
 // Load saved session on startup
 loadSession();
