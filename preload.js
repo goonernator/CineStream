@@ -1,0 +1,10 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  minimizeWindow: () => ipcRenderer.send('minimize-window'),
+  maximizeWindow: () => ipcRenderer.send('maximize-window'),
+  closeWindow: () => ipcRenderer.send('close-window'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  fetchSubtitles: (options) => ipcRenderer.invoke('fetch-subtitles', options)
+});
+
