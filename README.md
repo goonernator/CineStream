@@ -85,7 +85,7 @@ Customize subtitles with font, color, size, and shadow options.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/cinestream.git
+   git clone https://github.com/goonernator/CineStream.git
    cd cinestream
    ```
 
