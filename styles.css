@@ -196,7 +196,7 @@ body {
 
 /* Sidebar */
 .sidebar {
-  width: 340px;
+  width: 400px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -366,6 +366,30 @@ body {
 .result-info span {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.media-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.media-tag-movie {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.media-tag-tv {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .result-rating {

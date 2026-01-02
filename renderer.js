@@ -6,7 +6,7 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
 
 // OpenSubtitles API (Optional) - Get your free API key at: https://www.opensubtitles.com/consumers
-const OPENSUBTITLES_API_KEY = ''; // Leave empty to use Subdl fallback, or add your OpenSubtitles API key
+const OPENSUBTITLES_API_KEY = 'KF58KC3oXaO3M29b334T3BcwIubxksNT'; // Leave empty to use Subdl fallback, or add your OpenSubtitles API key
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
 
 // Discord Rich Presence - GitHub Repository URL
@@ -207,7 +207,7 @@ async function toggleFavorite(movieId, add = true) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          media_type: 'movie',
+          media_type: currentMediaType || 'movie',
           media_id: movieId,
           favorite: add
         })
@@ -239,7 +239,7 @@ async function toggleWatchlist(movieId, add = true) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          media_type: 'movie',
+          media_type: currentMediaType || 'movie',
           media_id: movieId,
           watchlist: add
         })
@@ -265,8 +265,9 @@ async function rateMovie(movieId, rating) {
   }
   
   try {
+    const mediaType = currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/movie/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
+      `${TMDB_BASE_URL}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -291,8 +292,9 @@ async function deleteRating(movieId) {
   if (!isLoggedIn()) return;
   
   try {
+    const mediaType = currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/movie/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
+      `${TMDB_BASE_URL}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
       { method: 'DELETE' }
     );
     const data = await response.json();
@@ -313,8 +315,9 @@ async function getMovieAccountState(movieId) {
   if (!isLoggedIn()) return null;
   
   try {
+    const mediaType = currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/movie/${movieId}/account_states?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
+      `${TMDB_BASE_URL}/${mediaType}/${movieId}/account_states?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
     );
     return await response.json();
   } catch (error) {
@@ -375,24 +378,39 @@ async function loadListContent(listType) {
   listEl.innerHTML = '<div class="search-loading"><div class="loader-small"></div><span>Loading...</span></div>';
   
   try {
-    let url;
+    let movieUrl, tvUrl;
     switch (listType) {
       case 'favorites':
-        url = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/favorite/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        movieUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/favorite/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        tvUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/favorite/tv?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
         break;
       case 'watchlist':
-        url = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/watchlist/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        movieUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/watchlist/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        tvUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/watchlist/tv?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
         break;
       case 'rated':
-        url = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/rated/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        movieUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/rated/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        tvUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/rated/tv?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
         break;
     }
     
-    const response = await fetch(url);
-    const data = await response.json();
+    // Fetch both movies and TV shows
+    const [movieRes, tvRes] = await Promise.all([
+      fetch(movieUrl),
+      fetch(tvUrl)
+    ]);
+    const [movieData, tvData] = await Promise.all([
+      movieRes.json(),
+      tvRes.json()
+    ]);
     
-    if (data.results && data.results.length > 0) {
-      displayListResults(listType, data.results);
+    // Tag each item with its media type and merge
+    const movies = (movieData.results || []).map(m => ({ ...m, media_type: 'movie' }));
+    const tvShows = (tvData.results || []).map(t => ({ ...t, media_type: 'tv' }));
+    const combined = [...movies, ...tvShows];
+    
+    if (combined.length > 0) {
+      displayListResults(listType, combined);
     } else {
       showListEmpty(listType);
     }
@@ -402,23 +420,28 @@ async function loadListContent(listType) {
   }
 }
 
-function displayListResults(listType, movies) {
+function displayListResults(listType, items) {
   const listEl = document.getElementById(`${listType}-list`);
   
-  listEl.innerHTML = movies.map(movie => {
-    const title = escapeHtml(movie.title || 'Unknown Title');
-    const year = movie.release_date ? movie.release_date.split('-')[0] : 'Unknown';
-    const rating = movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A';
-    const userRating = movie.rating ? ` • ★ ${movie.rating}` : '';
-    const poster = movie.poster_path 
-      ? `${TMDB_IMAGE_BASE}/w92${movie.poster_path}`
+  listEl.innerHTML = items.map(item => {
+    const isTV = item.media_type === 'tv';
+    const title = escapeHtml(item.title || item.name || 'Unknown Title');
+    const date = isTV ? item.first_air_date : item.release_date;
+    const year = date ? date.split('-')[0] : 'Unknown';
+    const rating = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
+    const userRating = item.rating ? ` • ★ ${item.rating}` : '';
+    const typeTag = isTV 
+      ? '<span class="media-tag media-tag-tv">TV</span>' 
+      : '<span class="media-tag media-tag-movie">Movie</span>';
+    const poster = item.poster_path 
+      ? `${TMDB_IMAGE_BASE}/w92${item.poster_path}`
       : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 92 138"%3E%3Crect fill="%231a1a2e" width="92" height="138"/%3E%3C/svg%3E';
     
     return `
-      <div class="search-result-item" data-id="${movie.id}">
+      <div class="search-result-item" data-id="${item.id}" data-type="${item.media_type || 'movie'}">
         <img class="result-poster" src="${poster}" alt="">
         <div class="result-info">
-          <h3>${title}</h3>
+          <h3>${title} ${typeTag}</h3>
           <span>${year}${userRating}</span>
         </div>
         <div class="result-rating">
@@ -432,7 +455,11 @@ function displayListResults(listType, movies) {
   }).join('');
   
   listEl.querySelectorAll('.search-result-item').forEach(item => {
-    item.addEventListener('click', () => loadMovie(item.dataset.id));
+    item.addEventListener('click', () => {
+      const id = item.dataset.id;
+      const type = item.dataset.type;
+      loadMedia(id, type);
+    });
   });
 }
 
