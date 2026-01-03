@@ -3,25 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://image.tmdb.org https://img.youtube.com https://i.ytimg.com data:; connect-src 'self' https://api.themoviedb.org https://tlo.sh https://*.cloudnestra.com https://*; media-src 'self' https: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://www.youtube-nocookie.com blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://image.tmdb.org https://img.youtube.com https://i.ytimg.com data:; connect-src 'self' https://api.themoviedb.org https://tlo.sh https://*.cloudnestra.com https://*; media-src 'self' https: blob:; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com;">
   <title>MovieDB Streamer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.14/dist/hls.min.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
   <!-- Custom Title Bar -->
   <div class="title-bar">
     <div class="title-bar-left">
-      <button class="menu-toggle" id="menu-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="3" y1="6" x2="21" y2="6"/>
-          <line x1="3" y1="12" x2="21" y2="12"/>
-          <line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </button>
       <div class="app-logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
@@ -35,9 +29,54 @@
         </svg>
         <span>CineStream</span>
       </div>
+      <!-- Navigation Tabs -->
+      <div class="title-bar-nav">
+        <button class="nav-tab" id="search-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span>Search</span>
+        </button>
+        <button class="nav-tab active" data-tab="home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+          <span>Home</span>
+        </button>
+        <button class="nav-tab" data-tab="favorites">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+          <span>Favorites</span>
+        </button>
+        <button class="nav-tab" data-tab="watchlist">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Watchlist</span>
+        </button>
+      </div>
     </div>
     <div class="title-bar-drag"></div>
-    <div class="window-controls">
+    <div class="title-bar-right">
+      <!-- Account Section -->
+      <div class="title-bar-account">
+        <button class="account-btn logged-out" id="account-btn">
+          <div class="account-avatar" id="account-avatar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="account-info">
+            <span class="account-name" id="account-name">Sign in to TMDB</span>
+            <span class="account-sub" id="account-sub">Access favorites & watchlist</span>
+          </div>
+        </button>
+      </div>
+      <div class="window-controls">
       <button class="control-btn minimize" id="minimize-btn">
         <svg viewBox="0 0 12 12"><rect y="5" width="12" height="2"/></svg>
       </button>
@@ -47,6 +86,7 @@
       <button class="control-btn close" id="close-btn">
         <svg viewBox="0 0 12 12"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5"/></svg>
       </button>
+      </div>
     </div>
   </div>
 
@@ -89,61 +129,10 @@
 
   <!-- Main Container -->
   <div class="main-container">
-    <!-- Sidebar -->
-    <aside class="sidebar collapsed" id="sidebar">
-      <!-- Account Section -->
-      <div class="account-section" id="account-section">
-        <button class="account-btn logged-out" id="account-btn">
-          <div class="account-avatar" id="account-avatar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </svg>
-          </div>
-          <div class="account-info">
-            <span class="account-name" id="account-name">Sign in to TMDB</span>
-            <span class="account-sub" id="account-sub">Access favorites & watchlist</span>
-          </div>
-        </button>
-      </div>
-
-      <!-- Navigation Tabs -->
-      <div class="nav-tabs" id="nav-tabs">
-        <button class="nav-tab" id="search-toggle">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="m21 21-4.35-4.35"/>
-          </svg>
-          <span>Search</span>
-        </button>
-        <button class="nav-tab active" data-tab="home">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-            <polyline points="9 22 9 12 15 12 15 22"/>
-          </svg>
-          <span>Home</span>
-        </button>
-        <button class="nav-tab" data-tab="favorites">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-          </svg>
-          <span>Favorites</span>
-        </button>
-        <button class="nav-tab" data-tab="watchlist">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span>Watchlist</span>
-        </button>
-        <button class="nav-tab" data-tab="rated">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-          </svg>
-          <span>Rated</span>
-        </button>
-      </div>
-      
-      <div class="sidebar-content" id="sidebar-content">
+    <!-- Content Area -->
+    <main class="content" id="content">
+      <!-- Lists Content (shown when not on homepage) -->
+      <div class="lists-container hidden">
         <!-- Favorites List -->
         <div class="list-content hidden" id="favorites-list">
           <div class="empty-state">
@@ -165,25 +154,224 @@
             <span>Sign in to sync your watchlist</span>
           </div>
         </div>
-        
-        <!-- Rated Movies -->
-        <div class="list-content hidden" id="rated-list">
-          <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>
-            <p>No rated movies</p>
-            <span>Sign in to sync your ratings</span>
-          </div>
-        </div>
       </div>
-    </aside>
-
-    <!-- Content Area -->
-    <main class="content" id="content">
       <!-- Homepage -->
       <div class="homepage" id="homepage">
         <div class="homepage-scroll">
+          <!-- Upcoming Section -->
+          <div class="upcoming-section" id="upcoming-section">
+            <div class="upcoming-carousel-wrapper">
+              <button class="upcoming-carousel-btn upcoming-carousel-prev" id="upcoming-carousel-prev" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="upcoming-carousel-container">
+                <div class="upcoming-carousel-track" id="upcoming-carousel-track">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="upcoming-carousel-btn upcoming-carousel-next" id="upcoming-carousel-next" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Continue Watching Section -->
+          <div class="category-section" id="continue-watching-section" style="display: none;">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                Continue Watching
+              </h3>
+            </div>
+            <div class="cards-row" id="continue-watching">
+              <div class="cards-loading"><div class="loader-small"></div></div>
+            </div>
+          </div>
+
+          <!-- TV Shows Section -->
+          <div class="section-header tv-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+            <h2>TV Shows</h2>
+          </div>
+
+          <!-- Airing Now (TV) -->
+          <div class="category-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                Airing Now
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="tv-new" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="tv-new">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="tv-new" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Popular TV -->
+          <div class="category-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 7l-7 5 7 5V7z"/>
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                </svg>
+                Popular
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="tv-popular" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="tv-popular">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="tv-popular" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Movies Section -->
+          <div class="section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+              <line x1="7" y1="2" x2="7" y2="22"/>
+              <line x1="17" y1="2" x2="17" y2="22"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+            </svg>
+            <h2>Movies</h2>
+          </div>
+
+          <!-- Popular Movies -->
+          <div class="category-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 7l-7 5 7 5V7z"/>
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                </svg>
+                Popular
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="movies-popular" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="movies-popular">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="movies-popular" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- New Releases (Movies) -->
+          <div class="category-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                New Releases
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="movies-new" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="movies-new">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="movies-new" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- TV Shows Section -->
+          <div class="section-header tv-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+            <h2>TV Shows</h2>
+          </div>
+
+          <!-- Top Rated TV -->
+          <div class="category-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+                Top Rated
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="tv-top-rated" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="tv-top-rated">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="tv-top-rated" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
           <!-- Movies Section -->
           <div class="section-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -205,123 +393,95 @@
                 Top Rated
               </h3>
             </div>
-            <div class="cards-row" id="movies-top-rated">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
-          </div>
-
-          <!-- Popular Movies -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="movies-top-rated" aria-label="Previous">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 7l-7 5 7 5V7z"/>
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                  <path d="M15 18l-6-6 6-6"/>
                 </svg>
-                Popular
-              </h3>
-            </div>
-            <div class="cards-row" id="movies-popular">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
-          </div>
-
-          <!-- New Movies -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="movies-top-rated">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="movies-top-rated" aria-label="Next">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
+                  <path d="M9 18l6-6-6-6"/>
                 </svg>
-                New Releases
-              </h3>
-            </div>
-            <div class="cards-row" id="movies-new">
-              <div class="cards-loading"><div class="loader-small"></div></div>
+              </button>
             </div>
           </div>
 
-          <!-- TV Section -->
-          <div class="section-header tv-header">
+          <!-- Browse by Genre Section -->
+          <div class="section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+            <h2>Browse by Genre</h2>
+          </div>
+
+          <div id="genres-container">
+            <!-- Genre sections will be dynamically added here -->
+          </div>
+
+          <!-- Browse by Provider Section -->
+          <div class="section-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
-              <polyline points="17 2 12 7 7 2"/>
+              <path d="M17 2l-5 5-5-5"/>
             </svg>
-            <h2>TV Shows</h2>
+            <h2>Browse by Provider</h2>
           </div>
 
-          <!-- Top Rated TV -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-                Top Rated
-              </h3>
-            </div>
-            <div class="cards-row" id="tv-top-rated">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
+          <div id="providers-container">
+            <!-- Provider sections will be dynamically added here -->
           </div>
 
-          <!-- Popular TV -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 7l-7 5 7 5V7z"/>
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                </svg>
-                Popular
-              </h3>
-            </div>
-            <div class="cards-row" id="tv-popular">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
-          </div>
+        </div>
+      </div>
 
-          <!-- New TV -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                Airing Now
-              </h3>
-            </div>
-            <div class="cards-row" id="tv-new">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
+      <!-- Category Results Page -->
+      <div class="category-results-page hidden" id="category-results-page">
+        <button class="back-to-home" id="back-to-category-home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          <span>Back to Home</span>
+        </button>
+        <div class="category-results-header">
+          <h1 id="category-results-title"></h1>
+        </div>
+        <div class="category-results-content">
+          <div class="category-results-grid" id="category-results-grid">
+            <div class="cards-loading"><div class="loader-small"></div></div>
           </div>
+        </div>
+      </div>
 
-          <!-- People Section -->
-          <div class="section-header people-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-            <h2>Popular People</h2>
+      <!-- Provider Details Page -->
+      <div class="provider-details-page hidden" id="provider-details-page">
+        <button class="back-to-home" id="back-to-provider-home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          <span>Back to Home</span>
+        </button>
+        <div class="provider-details-header">
+          <div class="provider-logo-container">
+            <img id="provider-logo" src="" alt="" class="provider-logo">
           </div>
-
-          <!-- Popular Actors -->
-          <div class="category-section">
-            <div class="category-header">
-              <h3>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                </svg>
-                Trending Actors & Actresses
-              </h3>
-            </div>
-            <div class="cards-row" id="people-popular">
-              <div class="cards-loading"><div class="loader-small"></div></div>
-            </div>
+          <h1 id="provider-name"></h1>
+        </div>
+        <div class="provider-tabs">
+          <button class="provider-tab active" data-tab="movies" id="provider-tab-movies">Movies</button>
+          <button class="provider-tab" data-tab="tv" id="provider-tab-tv">TV Shows</button>
+        </div>
+        <div class="provider-content">
+          <div class="provider-results-grid" id="provider-movies-grid">
+            <div class="cards-loading"><div class="loader-small"></div></div>
+          </div>
+          <div class="provider-results-grid hidden" id="provider-tv-grid">
+            <div class="cards-loading"><div class="loader-small"></div></div>
           </div>
         </div>
       </div>
@@ -344,6 +504,8 @@
               </svg>
               <span>Play Movie</span>
             </button>
+            <!-- Season Selector (TV Shows only) -->
+            <select class="episode-season-select hidden" id="episode-season-select"></select>
             <!-- Movie Actions -->
             <div class="movie-actions" id="movie-actions">
               <button class="action-btn" id="favorite-btn" title="Add to Favorites">
@@ -367,24 +529,6 @@
             <h1 class="movie-title" id="movie-title"></h1>
             <div class="movie-meta" id="movie-meta"></div>
             <p class="movie-overview" id="movie-overview"></p>
-            <!-- Episode Selector (TV Shows only) -->
-            <div class="episode-selector hidden" id="episode-selector">
-              <div class="selector-row">
-                <label>Season</label>
-                <select id="season-select"></select>
-              </div>
-              <div class="selector-row">
-                <label>Episode</label>
-                <select id="episode-select"></select>
-              </div>
-              <button class="load-episode-btn" id="load-episode-btn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="23 4 23 10 17 10"/>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-                Load Episode
-              </button>
-            </div>
             <div class="stream-info" id="stream-info"></div>
             
             <!-- Cast Section -->
@@ -401,6 +545,16 @@
               <div class="cast-scroll" id="cast-scroll">
                 <div class="cast-loading-inline">
                   <div class="loader-small"></div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Episode List Section (TV Shows only) -->
+            <div class="episode-list-section hidden" id="episode-list-section">
+              <div class="episode-list-container" id="episode-list-container">
+                <div class="episode-loading">
+                  <div class="loader-small"></div>
+                  <span>Loading episodes...</span>
                 </div>
               </div>
             </div>
@@ -451,26 +605,39 @@
             </svg>
             <span>Back to Details</span>
           </button>
-          <div class="subtitle-controls" id="subtitle-controls">
-            <button class="fetch-subs-btn" id="fetch-subs-btn" title="Search for subtitles">
+          <!-- Player Menu (3-dot menu) -->
+          <div class="player-menu-container">
+            <button class="player-menu-btn" id="player-menu-btn" title="Player settings">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="4" width="20" height="16" rx="2"/>
-                <path d="M7 15h4M13 15h4M7 11h2M11 11h6"/>
+                <circle cx="12" cy="5" r="1"/>
+                <circle cx="12" cy="12" r="1"/>
+                <circle cx="12" cy="19" r="1"/>
               </svg>
             </button>
-            <select id="subtitle-selector">
-              <option value="-1">No Subtitles</option>
-            </select>
-            <button class="subtitle-settings-btn" id="subtitle-settings-btn" title="Subtitle settings">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
-            </button>
-          </div>
-          
-          <!-- Subtitle Settings Panel -->
-          <div class="subtitle-settings-panel hidden" id="subtitle-settings-panel">
+            <div class="player-menu hidden" id="player-menu">
+              <div class="player-menu-section">
+                <div class="player-menu-item-label">Subtitles</div>
+                <button class="fetch-subs-btn menu-item-btn" id="fetch-subs-btn" title="Search for subtitles">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M7 15h4M13 15h4M7 11h2M11 11h6"/>
+                  </svg>
+                  <span>Search Subtitles</span>
+                </button>
+                <select id="subtitle-selector" class="menu-item-select">
+                  <option value="-1">Off</option>
+                </select>
+                <button class="subtitle-settings-btn menu-item-btn" id="subtitle-settings-btn" title="Subtitle settings">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                  </svg>
+                  <span>Subtitle Settings</span>
+                </button>
+              </div>
+              
+              <!-- Subtitle Settings Panel -->
+              <div class="subtitle-settings-panel hidden" id="subtitle-settings-panel">
             <div class="settings-header">
               <span>Subtitle Settings</span>
               <button class="settings-close" id="settings-close">×</button>
@@ -516,11 +683,19 @@
               </div>
               <button class="reset-settings-btn" id="reset-sub-settings">Reset to Default</button>
             </div>
+              </div>
+            </div>
           </div>
         </div>
         <video class="video-player" id="video-player" controls autoplay crossorigin="anonymous">
           Your browser does not support video playback.
         </video>
+        <button class="next-episode-btn hidden" id="next-episode-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+          <span>Next Episode</span>
+        </button>
       </div>
 
       <!-- Loading State -->
@@ -632,6 +807,41 @@
   <!-- Toast Notification -->
   <div class="toast hidden" id="toast">
     <span class="toast-message" id="toast-message"></span>
+  </div>
+
+  <!-- Context Menu -->
+  <div class="context-menu hidden" id="context-menu">
+    <div class="context-menu-item hidden" data-action="favorite" id="context-add-favorite">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      </svg>
+      <span>Add to Favorites</span>
+    </div>
+    <div class="context-menu-item hidden" data-action="remove-favorite" id="context-remove-favorite">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      </svg>
+      <span>Remove from Favorites</span>
+    </div>
+    <div class="context-menu-item hidden" data-action="watchlist" id="context-add-watchlist">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Add to Watchlist</span>
+    </div>
+    <div class="context-menu-item hidden" data-action="remove-watchlist" id="context-remove-watchlist">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Remove from Watchlist</span>
+    </div>
+    <div class="context-menu-item hidden" data-action="remove-continue" id="context-remove-continue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+      <span>Remove from Continue Watching</span>
+    </div>
   </div>
 
   <script src="renderer.js"></script>
