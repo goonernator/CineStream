@@ -2,7 +2,7 @@
 
 A beautiful, feature-rich desktop application for streaming movies and TV shows. Built with Electron.
 
-![CineStream Banner](https://img.shields.io/badge/CineStream-v1.0.0-e63946?style=for-the-badge)
+![CineStream Banner](https://img.shields.io/badge/CineStream-v1.0.1.0-e63946?style=for-the-badge)
 ![Electron](https://img.shields.io/badge/Electron-28.x-47848F?style=for-the-badge&logo=electron)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
@@ -85,7 +85,7 @@ Customize subtitles with font, color, size, and shadow options.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/cinestream.git
+   git clone https://github.com/goonernator/CineStream.git
    cd cinestream
    ```
 
