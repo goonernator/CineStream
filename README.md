@@ -2,7 +2,7 @@
 
 A beautiful, feature-rich desktop application for streaming movies and TV shows. Built with Electron.
 
-![CineStream Banner](https://img.shields.io/badge/CineStream-v1.0.1.0-e63946?style=for-the-badge)
+![CineStream Banner](https://img.shields.io/badge/CineStream-v1.0.4.0-e63946?style=for-the-badge)
 ![Electron](https://img.shields.io/badge/Electron-28.x-47848F?style=for-the-badge&logo=electron)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
@@ -18,10 +18,13 @@ A beautiful, feature-rich desktop application for streaming movies and TV shows.
 - **Episode Browser** - Easy season and episode selection for TV shows
 
 ### 🔍 Discovery
+- **Featured Latest Carousel** - Prominent large carousel showcasing the latest movies and TV shows with stunning backdrop images, detailed descriptions, and instant play
+- **Continue Watching** - Resume your viewing progress with automatic timestamp tracking
+- **Browse by Genre** - Explore content by genre with dynamic category sections
+- **Browse by Provider** - Discover content available on your favorite streaming services (Netflix, Hulu, Disney+, etc.)
 - **Powerful Search** - Search movies, TV shows, and people with filters
-- **Homepage Categories** - Browse Top Rated, Popular, and New Releases
+- **Homepage Categories** - Browse Top Rated, Popular, and New Releases with carousel navigation
 - **Trailer Previews** - Hover over cards to preview trailers
-- **Actor Profiles** - View filmography and biography of actors
 - **Detailed Info** - Ratings, runtime, genres, cast, and more
 
 ### 📝 Subtitles & Captions
@@ -59,10 +62,33 @@ A beautiful, feature-rich desktop application for streaming movies and TV shows.
 
 ---
 
+## 🆕 What's New in v1.0.4.0
+
+### Major Updates
+- **✨ Featured Latest Carousel** - Brand new large, prominent carousel at the top of the homepage displaying the latest movies and TV shows. Features:
+  - Large 800px wide cards with backdrop images
+  - Poster images with ratings and metadata
+  - Detailed descriptions and overview text
+  - Instant "Watch Now" buttons
+  - Smooth horizontal scrolling navigation
+  - Combines latest movies and TV shows in one stunning showcase
+
+- **🏠 Enhanced Homepage Experience**
+  - Reorganized category layout for better content discovery
+  - Improved carousel navigation throughout all sections
+  - Better visual hierarchy with the featured carousel
+
+### Improvements
+- Better content filtering to ensure quality
+- Improved loading states and error handling
+- Enhanced UI responsiveness
+
+---
+
 ## 📸 Screenshots
 
 ### Homepage
-Browse through curated categories of movies and TV shows with trailer previews on hover.
+Featured latest carousel at the top showcasing the newest releases, followed by Continue Watching and curated categories of movies and TV shows with trailer previews on hover.
 
 ### Search
 Full-screen search overlay with filters for Movies, TV Shows, and People.
