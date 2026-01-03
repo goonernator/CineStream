@@ -187,6 +187,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [TMDB](https://www.themoviedb.org/) for the amazing movie database API
 - [OpenSubtitles](https://www.opensubtitles.com/) for subtitle support
 - [Electron](https://www.electronjs.org/) for making cross-platform apps possible
+- [Joshua](https://github.com/barcodebimbo) for supplying me the api backend for the streams!
 
 ---
 
