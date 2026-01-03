@@ -17,7 +17,7 @@
     "streaming",
     "tmdb"
   ],
-  "author": "CineStream",
+  "author": "GoonerNator",
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.1.0",
