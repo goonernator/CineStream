@@ -90,14 +90,20 @@ A beautiful, feature-rich desktop application for streaming movies and TV shows.
 ### Homepage
 Featured latest carousel at the top showcasing the newest releases, followed by Continue Watching and curated categories of movies and TV shows with trailer previews on hover.
 
+<img width="2557" height="1343" alt="Screenshot_12" src="https://github.com/user-attachments/assets/9565f308-05be-49cf-a9b4-a801a353acfa" />
+
+
 ### Search
 Full-screen search overlay with filters for Movies, TV Shows, and People.
 
-### Player
-Clean video player with subtitle controls and quality selection.
+<img width="2557" height="1342" alt="Screenshot_13" src="https://github.com/user-attachments/assets/44095dbd-fdd5-4e78-8b63-e5c67b9f6960" />
 
-### Subtitle Settings
-Customize subtitles with font, color, size, and shadow options.
+
+### Player & Subtitle Settings
+Clean basic player with customizable subtitles with font, color, size, and shadow options.
+
+<img width="2556" height="1341" alt="Screenshot_14" src="https://github.com/user-attachments/assets/3335cb87-5fee-4083-b883-0280e3e4b80d" />
+
 
 ---
 
