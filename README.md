@@ -105,6 +105,11 @@ Clean basic player with customizable subtitles with font, color, size, and shado
 <img width="2556" height="1341" alt="Screenshot_14" src="https://github.com/user-attachments/assets/3335cb87-5fee-4083-b883-0280e3e4b80d" />
 
 
+### Network discovery
+Turn the pc app into a local server so you can connect via your mobile, console or smartTV without having to install it on another device.
+
+
+
 ---
 
 ## 🚀 Getting Started

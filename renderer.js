@@ -5,6 +5,98 @@ const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
 
+// ==================== ACCENT COLOR THEMING ====================
+
+// Palette of accent colors that maintain good contrast with white text
+const accentColorPalette = [
+  { primary: '#e63946', secondary: '#ff6b6b', glow: 'rgba(230, 57, 70, 0.3)', gradientEnd: '#ff4757' }, // Red
+  { primary: '#ff6b9d', secondary: '#ff8fb3', glow: 'rgba(255, 107, 157, 0.3)', gradientEnd: '#ff8fb3' }, // Pink
+  { primary: '#4dabf7', secondary: '#74c0fc', glow: 'rgba(77, 171, 247, 0.3)', gradientEnd: '#66d9ef' }, // Blue
+  { primary: '#ffd43b', secondary: '#ffec8c', glow: 'rgba(255, 212, 59, 0.3)', gradientEnd: '#ffec8c' }, // Yellow
+  { primary: '#868e96', secondary: '#adb5bd', glow: 'rgba(134, 142, 150, 0.3)', gradientEnd: '#adb5bd' }, // Grey
+  { primary: '#51cf66', secondary: '#69db7c', glow: 'rgba(81, 207, 102, 0.3)', gradientEnd: '#69db7c' }, // Green
+  { primary: '#ff922b', secondary: '#ffa94d', glow: 'rgba(255, 146, 43, 0.3)', gradientEnd: '#ffa94d' }, // Orange
+  { primary: '#845ef7', secondary: '#9775fa', glow: 'rgba(132, 94, 247, 0.3)', gradientEnd: '#9775fa' }, // Purple
+  { primary: '#20c997', secondary: '#3dd5f3', glow: 'rgba(32, 201, 151, 0.3)', gradientEnd: '#3dd5f3' }, // Teal
+  { primary: '#fa5252', secondary: '#ff8787', glow: 'rgba(250, 82, 82, 0.3)', gradientEnd: '#ff8787' }, // Coral
+];
+
+// Apply random accent color theme
+function applyRandomAccentTheme() {
+  // Pick a random color from the palette
+  const randomColor = accentColorPalette[Math.floor(Math.random() * accentColorPalette.length)];
+  
+  // Get the root element
+  const root = document.documentElement;
+  
+  // Convert hex to RGB for rgba
+  function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+  
+  const rgb = hexToRgb(randomColor.primary);
+  const activeBg = rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.1)` : randomColor.glow.replace('0.3', '0.1');
+  
+  // Apply the accent colors
+  root.style.setProperty('--accent-primary', randomColor.primary);
+  root.style.setProperty('--accent-secondary', randomColor.secondary);
+  root.style.setProperty('--accent-glow', randomColor.glow);
+  root.style.setProperty('--accent-active-bg', activeBg);
+  root.style.setProperty('--gradient-accent', `linear-gradient(135deg, ${randomColor.primary} 0%, ${randomColor.gradientEnd} 100%)`);
+  
+  console.log('Applied accent theme:', randomColor.primary);
+}
+
+// Apply theme on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', applyRandomAccentTheme);
+} else {
+  applyRandomAccentTheme();
+}
+
+// Detect if running in browser (not Electron)
+const isBrowserMode = typeof window !== 'undefined' && !window.electronAPI;
+
+// Hide Electron-only UI elements in browser mode
+if (isBrowserMode) {
+  document.addEventListener('DOMContentLoaded', () => {
+    // Hide window controls
+    const windowControls = document.querySelector('.window-controls');
+    if (windowControls) windowControls.style.display = 'none';
+    
+    // Hide settings button (network sharing only works from Electron app)
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) settingsBtn.style.display = 'none';
+  });
+}
+
+// Get base URL for API calls - use proxy when in browser mode
+function getAPIBaseURL() {
+  if (isBrowserMode) {
+    // When accessed from browser, use the server's API proxy
+    return '/api';
+  }
+  return TMDB_BASE_URL;
+}
+
+// Wrapper for fetch that routes through proxy in browser mode
+async function apiFetch(url, options = {}) {
+  // If it's already a full URL and we're in browser mode, route through proxy
+  if (isBrowserMode && url.startsWith('http')) {
+    // Extract the path from TMDB URL
+    const urlObj = new URL(url);
+    const path = urlObj.pathname + urlObj.search;
+    url = `/api${path}`;
+  }
+  
+  return fetch(url, options);
+}
+
 // OpenSubtitles API (Optional) - Get your free API key at: https://www.opensubtitles.com/consumers
 const OPENSUBTITLES_API_KEY = 'KF58KC3oXaO3M29b334T3BcwIubxksNT'; // Leave empty to use Subdl fallback, or add your OpenSubtitles API key
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
@@ -121,9 +213,11 @@ function isLoggedIn() {
 async function startAuthentication() {
   try {
     // Step 1: Get request token
-    const tokenResponse = await fetch(
-      `${TMDB_BASE_URL}/authentication/token/new?api_key=${TMDB_API_KEY}`
-    );
+    const apiUrl = isBrowserMode 
+      ? `/api/authentication/token/new?api_key=${TMDB_API_KEY}`
+      : `${TMDB_BASE_URL}/authentication/token/new?api_key=${TMDB_API_KEY}`;
+    
+    const tokenResponse = await fetch(apiUrl);
     const tokenData = await tokenResponse.json();
     
     if (!tokenData.success) throw new Error('Failed to get request token');
@@ -132,7 +226,12 @@ async function startAuthentication() {
     
     // Step 2: Open TMDB auth page in browser
     const authUrl = `https://www.themoviedb.org/authenticate/${tokenData.request_token}`;
-    window.electronAPI.openExternal(authUrl);
+    if (window.electronAPI && window.electronAPI.openExternal) {
+      window.electronAPI.openExternal(authUrl);
+    } else {
+      // In browser mode, open in same window
+      window.open(authUrl, '_blank');
+    }
     
     // Show waiting state
     document.getElementById('start-auth-btn').classList.add('hidden');
@@ -148,14 +247,15 @@ async function startAuthentication() {
 async function completeAuthentication() {
   try {
     // Step 3: Create session with approved token
-    const sessionResponse = await fetch(
-      `${TMDB_BASE_URL}/authentication/session/new?api_key=${TMDB_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_token: tmdbSession.requestToken })
-      }
-    );
+    const sessionUrl = isBrowserMode
+      ? `/api/authentication/session/new?api_key=${TMDB_API_KEY}`
+      : `${TMDB_BASE_URL}/authentication/session/new?api_key=${TMDB_API_KEY}`;
+    
+    const sessionResponse = await fetch(sessionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_token: tmdbSession.requestToken })
+    });
     const sessionData = await sessionResponse.json();
     
     if (!sessionData.success) {
@@ -165,9 +265,11 @@ async function completeAuthentication() {
     tmdbSession.sessionId = sessionData.session_id;
     
     // Step 4: Get account details
-    const accountResponse = await fetch(
-      `${TMDB_BASE_URL}/account?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
-    );
+    const accountUrl = isBrowserMode
+      ? `/api/account?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
+      : `${TMDB_BASE_URL}/account?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+    
+    const accountResponse = await fetch(accountUrl);
     const accountData = await accountResponse.json();
     
     tmdbSession.accountId = accountData.id;
@@ -244,7 +346,7 @@ async function rateMovie(movieId, rating) {
   try {
     const mediaType = currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
+      `${getAPIBaseURL()}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +372,7 @@ async function deleteRating(movieId) {
   try {
     const mediaType = currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
+      `${getAPIBaseURL()}/${mediaType}/${movieId}/rating?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`,
       { method: 'DELETE' }
     );
     const data = await response.json();
@@ -292,7 +394,7 @@ async function getMovieAccountState(movieId, mediaType = null) {
   try {
     const type = mediaType || currentMediaType || 'movie';
     const response = await fetch(
-      `${TMDB_BASE_URL}/${type}/${movieId}/account_states?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
+      `${getAPIBaseURL()}/${type}/${movieId}/account_states?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`
     );
     return await response.json();
   } catch (error) {
@@ -356,8 +458,8 @@ async function loadListContent(listType) {
     let movieUrl, tvUrl;
     switch (listType) {
       case 'favorites':
-        movieUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/favorite/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
-        tvUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/favorite/tv?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        movieUrl = `${getAPIBaseURL()}/account/${tmdbSession.accountId}/favorite/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
+        tvUrl = `${getAPIBaseURL()}/account/${tmdbSession.accountId}/favorite/tv?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
         break;
       case 'watchlist':
         movieUrl = `${TMDB_BASE_URL}/account/${tmdbSession.accountId}/watchlist/movies?api_key=${TMDB_API_KEY}&session_id=${tmdbSession.sessionId}`;
@@ -433,6 +535,7 @@ function displayListResults(listType, items) {
     });
   });
 }
+
 
 function showListEmpty(listType, message = null) {
   const listEl = document.getElementById(`${listType}-list`);
@@ -529,6 +632,189 @@ function updateStarDisplay(rating) {
   });
 }
 
+// ==================== SETTINGS MODAL ====================
+
+let networkServerStatus = {
+  running: false,
+  ip: null,
+  port: null,
+  url: null
+};
+
+function showSettingsModal() {
+  document.getElementById('settings-modal').classList.remove('hidden');
+  updateNetworkStatus();
+}
+
+function hideSettingsModal() {
+  document.getElementById('settings-modal').classList.add('hidden');
+}
+
+async function updateNetworkStatus() {
+  try {
+    if (!window.electronAPI) {
+      console.warn('electronAPI not available (running in browser)');
+      return;
+    }
+    const status = await window.electronAPI.getNetworkServerStatus();
+    networkServerStatus = status;
+    
+    const statusElement = document.getElementById('network-status');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const connectionIP = document.getElementById('connection-ip');
+    const connectionPort = document.getElementById('connection-port');
+    const connectionUrl = document.getElementById('connection-url');
+    const toggle = document.getElementById('network-sharing-toggle');
+    
+    if (status.running) {
+      statusElement.classList.remove('hidden');
+      statusDot.classList.add('active');
+      statusDot.classList.remove('error');
+      statusText.textContent = 'Server is running';
+      connectionIP.textContent = status.ip || '-';
+      connectionPort.textContent = status.port || '-';
+      connectionUrl.value = status.url || '-';
+      toggle.checked = true;
+    } else {
+      statusElement.classList.add('hidden');
+      statusDot.classList.remove('active', 'error');
+      statusText.textContent = 'Server is stopped';
+      toggle.checked = false;
+    }
+  } catch (error) {
+    console.error('Failed to get network status:', error);
+  }
+}
+
+async function toggleNetworkSharing(enabled) {
+  if (!window.electronAPI) {
+    showToast('Network sharing is only available in the Electron app');
+    document.getElementById('network-sharing-toggle').checked = false;
+    return;
+  }
+  
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const statusElement = document.getElementById('network-status');
+  
+  try {
+    if (enabled) {
+      statusElement.classList.remove('hidden');
+      statusDot.classList.remove('active', 'error');
+      statusText.textContent = 'Starting server...';
+      
+      const result = await window.electronAPI.startNetworkServer();
+      
+      if (result.success) {
+        networkServerStatus = {
+          running: true,
+          ip: result.ip,
+          port: result.port,
+          url: result.url
+        };
+        
+        statusDot.classList.add('active');
+        statusText.textContent = 'Server is running';
+        
+        document.getElementById('connection-ip').textContent = result.ip;
+        document.getElementById('connection-port').textContent = result.port;
+        document.getElementById('connection-url').value = result.url;
+        
+        showToast(`Network server started on ${result.url}`);
+      } else {
+        statusDot.classList.add('error');
+        statusText.textContent = `Failed to start: ${result.error || 'Unknown error'}`;
+        document.getElementById('network-sharing-toggle').checked = false;
+        showToast('Failed to start network server');
+      }
+    } else {
+      statusDot.classList.remove('active', 'error');
+      statusText.textContent = 'Stopping server...';
+      
+      const result = await window.electronAPI.stopNetworkServer();
+      
+      if (result.success) {
+        networkServerStatus = {
+          running: false,
+          ip: null,
+          port: null,
+          url: null
+        };
+        
+        statusElement.classList.add('hidden');
+        showToast('Network server stopped');
+      } else {
+        showToast('Failed to stop network server');
+      }
+    }
+  } catch (error) {
+    console.error('Network sharing toggle error:', error);
+    statusDot.classList.add('error');
+    statusText.textContent = 'Error occurred';
+    document.getElementById('network-sharing-toggle').checked = false;
+    showToast('An error occurred');
+  }
+}
+
+function copyNetworkUrl() {
+  const urlInput = document.getElementById('connection-url');
+  const url = urlInput.value;
+  
+  if (url && url !== '-') {
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('URL copied to clipboard');
+      const copyBtn = document.getElementById('copy-url-btn');
+      const originalHTML = copyBtn.innerHTML;
+      copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+      setTimeout(() => {
+        copyBtn.innerHTML = originalHTML;
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      showToast('Failed to copy URL');
+    });
+  }
+}
+
+// Settings modal event listeners
+const settingsBtn = document.getElementById('settings-btn');
+if (settingsBtn) {
+  settingsBtn.addEventListener('click', showSettingsModal);
+}
+
+const settingsModal = document.getElementById('settings-modal');
+if (settingsModal) {
+  document.getElementById('settings-modal-close').addEventListener('click', hideSettingsModal);
+  settingsModal.querySelector('.modal-backdrop').addEventListener('click', hideSettingsModal);
+  
+  // Periodically update network status when modal is open
+  let networkStatusInterval = null;
+  settingsModal.addEventListener('transitionend', () => {
+    if (!settingsModal.classList.contains('hidden')) {
+      updateNetworkStatus();
+      networkStatusInterval = setInterval(updateNetworkStatus, 2000);
+    } else {
+      if (networkStatusInterval) {
+        clearInterval(networkStatusInterval);
+        networkStatusInterval = null;
+      }
+    }
+  });
+}
+
+const networkToggle = document.getElementById('network-sharing-toggle');
+if (networkToggle) {
+  networkToggle.addEventListener('change', (e) => {
+    toggleNetworkSharing(e.target.checked);
+  });
+}
+
+const copyUrlBtn = document.getElementById('copy-url-btn');
+if (copyUrlBtn) {
+  copyUrlBtn.addEventListener('click', copyNetworkUrl);
+}
+
 // Modal event listeners
 document.getElementById('login-modal-close').addEventListener('click', hideLoginModal);
 document.getElementById('login-modal').querySelector('.modal-backdrop').addEventListener('click', hideLoginModal);
@@ -592,7 +878,7 @@ async function loadCast(mediaId, mediaType) {
   
   try {
     const response = await fetch(
-      `${TMDB_BASE_URL}/${mediaType}/${mediaId}/credits?api_key=${TMDB_API_KEY}`
+      `${getAPIBaseURL()}/${mediaType}/${mediaId}/credits?api_key=${TMDB_API_KEY}`
     );
     const data = await response.json();
     
@@ -692,8 +978,8 @@ async function loadPerson(personId) {
   try {
     // Fetch person details
     const [personResponse, creditsResponse] = await Promise.all([
-      fetch(`${TMDB_BASE_URL}/person/${personId}?api_key=${TMDB_API_KEY}`),
-      fetch(`${TMDB_BASE_URL}/person/${personId}/combined_credits?api_key=${TMDB_API_KEY}`)
+      apiFetch(`${getAPIBaseURL()}/person/${personId}?api_key=${TMDB_API_KEY}`),
+      apiFetch(`${getAPIBaseURL()}/person/${personId}/combined_credits?api_key=${TMDB_API_KEY}`)
     ]);
     
     const person = await personResponse.json();
@@ -961,9 +1247,9 @@ async function searchContent(query) {
   try {
     let endpoint;
     if (currentSearchFilter === 'multi') {
-      endpoint = `${TMDB_BASE_URL}/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=1`;
+      endpoint = `${getAPIBaseURL()}/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=1`;
     } else {
-      endpoint = `${TMDB_BASE_URL}/search/${currentSearchFilter}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=1`;
+      endpoint = `${getAPIBaseURL()}/search/${currentSearchFilter}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=1`;
     }
     
     const response = await fetch(endpoint);
@@ -1292,7 +1578,7 @@ async function fetchExternalSubtitles(tmdbId, mediaType, season = null, episode 
     let imdbId = null;
     try {
       const externalIdsResponse = await fetch(
-        `${TMDB_BASE_URL}/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`
+        `${getAPIBaseURL()}/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`
       );
       const externalIds = await externalIdsResponse.json();
       imdbId = externalIds.imdb_id;
@@ -1301,14 +1587,18 @@ async function fetchExternalSubtitles(tmdbId, mediaType, season = null, episode 
     }
     
     // Use IPC to fetch subtitles from main process (bypasses CORS)
-    const subtitles = await window.electronAPI.fetchSubtitles({
-      type: mediaType,
-      tmdbId: tmdbId,
-      imdbId: imdbId,
-      apiKey: OPENSUBTITLES_API_KEY,
-      season: season,
-      episode: episode
-    });
+    // In browser mode, subtitles won't work (requires Electron)
+    let subtitles = [];
+    if (window.electronAPI && window.electronAPI.fetchSubtitles) {
+      subtitles = await window.electronAPI.fetchSubtitles({
+        type: mediaType,
+        tmdbId: tmdbId,
+        imdbId: imdbId,
+        apiKey: OPENSUBTITLES_API_KEY,
+        season: season,
+        episode: episode
+      });
+    }
     
     return subtitles || [];
   } catch (error) {
@@ -1688,6 +1978,8 @@ function hidePlayer() {
   setDiscordBrowsing();
   
   playerContainer.classList.add('hidden');
+  
+  
   if (currentMovie) {
     movieDetails.classList.remove('hidden');
   } else {
@@ -1970,8 +2262,8 @@ async function loadLatest() {
     // Fetch latest movies (now playing) and TV shows (on the air)
     // These endpoints return multiple items of the latest content
     const [moviesRes, tvRes] = await Promise.all([
-      fetch(`${TMDB_BASE_URL}/movie/now_playing?api_key=${TMDB_API_KEY}&page=1`),
-      fetch(`${TMDB_BASE_URL}/tv/on_the_air?api_key=${TMDB_API_KEY}&page=1`)
+      apiFetch(`${getAPIBaseURL()}/movie/now_playing?api_key=${TMDB_API_KEY}&page=1`),
+      apiFetch(`${getAPIBaseURL()}/tv/on_the_air?api_key=${TMDB_API_KEY}&page=1`)
     ]);
     
     const moviesData = await moviesRes.json();
@@ -2129,7 +2421,7 @@ async function loadContinueWatching() {
       progressItems.slice(0, 10).map(async (progress) => {
         try {
           const response = await fetch(
-            `${TMDB_BASE_URL}/${progress.mediaType}/${progress.id}?api_key=${TMDB_API_KEY}`
+            `${getAPIBaseURL()}/${progress.mediaType}/${progress.id}?api_key=${TMDB_API_KEY}`
           );
           const details = await response.json();
           return {
@@ -2151,6 +2443,9 @@ async function loadContinueWatching() {
     }
     
     renderContinueWatchingCards(container, validItems);
+    
+    // Setup carousel navigation for continue watching
+    setupCarouselNavigation('continue-watching');
   } catch (error) {
     console.error('Failed to load continue watching:', error);
     section.style.display = 'none';
@@ -2243,7 +2538,7 @@ function renderContinueWatchingCards(container, items) {
         
         try {
           // Fetch TMDB details directly (without using loadMedia which resets season/episode)
-          const mediaResponse = await fetch(`${TMDB_BASE_URL}/tv/${id}?api_key=${TMDB_API_KEY}`);
+          const mediaResponse = await apiFetch(`${getAPIBaseURL()}/tv/${id}?api_key=${TMDB_API_KEY}`);
           if (!mediaResponse.ok) throw new Error('Failed to load TV show details');
           
           const media = await mediaResponse.json();
@@ -2306,7 +2601,7 @@ async function loadCategory(containerId, mediaType, category) {
   
   try {
     const response = await fetch(
-      `${TMDB_BASE_URL}/${mediaType}/${category}?api_key=${TMDB_API_KEY}&page=1`
+      `${getAPIBaseURL()}/${mediaType}/${category}?api_key=${TMDB_API_KEY}&page=1`
     );
     const data = await response.json();
     
@@ -2335,8 +2630,8 @@ async function loadGenres() {
   try {
     // Fetch movie and TV genres
     const [movieGenresRes, tvGenresRes] = await Promise.all([
-      fetch(`${TMDB_BASE_URL}/genre/movie/list?api_key=${TMDB_API_KEY}`),
-      fetch(`${TMDB_BASE_URL}/genre/tv/list?api_key=${TMDB_API_KEY}`)
+      apiFetch(`${getAPIBaseURL()}/genre/movie/list?api_key=${TMDB_API_KEY}`),
+      apiFetch(`${getAPIBaseURL()}/genre/tv/list?api_key=${TMDB_API_KEY}`)
     ]);
     
     const movieGenres = await movieGenresRes.json();
@@ -2453,7 +2748,7 @@ async function showGenreResults(genreId, mediaType, genreName) {
     
     const responses = await Promise.all(
       pages.map(page =>
-        fetch(`${TMDB_BASE_URL}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`)
+        apiFetch(`${getAPIBaseURL()}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`)
       )
     );
     
@@ -2488,8 +2783,8 @@ async function loadProviders() {
   try {
     // Fetch movie and TV providers
     const [movieProvidersRes, tvProvidersRes] = await Promise.all([
-      fetch(`${TMDB_BASE_URL}/watch/providers/movie?api_key=${TMDB_API_KEY}`),
-      fetch(`${TMDB_BASE_URL}/watch/providers/tv?api_key=${TMDB_API_KEY}`)
+      apiFetch(`${getAPIBaseURL()}/watch/providers/movie?api_key=${TMDB_API_KEY}`),
+      apiFetch(`${getAPIBaseURL()}/watch/providers/tv?api_key=${TMDB_API_KEY}`)
     ]);
     
     const movieProviders = await movieProvidersRes.json();
@@ -2648,7 +2943,7 @@ async function showProviderResults(providerId, mediaType, regions, providerName)
     
     const responses = await Promise.all(
       pages.map(page =>
-        fetch(`${TMDB_BASE_URL}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_watch_providers=${providerId}&watch_region=${region}&page=${page}&sort_by=popularity.desc`)
+        apiFetch(`${getAPIBaseURL()}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_watch_providers=${providerId}&watch_region=${region}&page=${page}&sort_by=popularity.desc`)
       )
     );
     
@@ -2736,7 +3031,7 @@ async function loadProviderContentForPage(providerId, mediaType, region, contain
     
     const responses = await Promise.all(
       pages.map(page =>
-        fetch(`${TMDB_BASE_URL}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_watch_providers=${providerId}&watch_region=${region}&page=${page}&sort_by=popularity.desc`)
+        apiFetch(`${getAPIBaseURL()}/discover/${mediaType}?api_key=${TMDB_API_KEY}&with_watch_providers=${providerId}&watch_region=${region}&page=${page}&sort_by=popularity.desc`)
       )
     );
     
@@ -3453,7 +3748,7 @@ async function loadMedia(id, mediaType = 'movie') {
     
     // Fetch TMDB details and stream info in parallel (if not cached)
     const fetchPromises = [
-      fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${TMDB_API_KEY}`)
+      apiFetch(`${getAPIBaseURL()}/${mediaType}/${id}?api_key=${TMDB_API_KEY}`)
     ];
     
     if (!streamData) {
@@ -4418,4 +4713,53 @@ loadSession();
 // Show homepage and load content on startup
 showHomepage();
 loadHomepage();
+
+
+// ==================== MOBILE-SPECIFIC IMPROVEMENTS ====================
+
+// Prevent zoom on input focus (iOS Safari)
+if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+  const inputs = document.querySelectorAll('input[type="text"], input[type="search"], textarea');
+  inputs.forEach(input => {
+    if (input.style.fontSize !== '16px') {
+      input.style.fontSize = '16px';
+    }
+  });
+}
+
+// Improve touch scrolling
+if ('ontouchstart' in window) {
+  document.body.style.webkitOverflowScrolling = 'touch';
+  
+  // Add touch-friendly class
+  document.body.classList.add('touch-device');
+  
+  // Prevent double-tap zoom on buttons
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, false);
+}
+
+// Handle orientation change
+let orientationTimeout;
+window.addEventListener('orientationchange', () => {
+  clearTimeout(orientationTimeout);
+  orientationTimeout = setTimeout(() => {
+    // Force a repaint to fix layout issues
+    window.scrollTo(0, 0);
+    if (videoPlayer && !videoPlayer.paused) {
+      // Pause and resume video to fix fullscreen issues
+      const wasPlaying = !videoPlayer.paused;
+      videoPlayer.pause();
+      setTimeout(() => {
+        if (wasPlaying) videoPlayer.play();
+      }, 100);
+    }
+  }, 100);
+});
 

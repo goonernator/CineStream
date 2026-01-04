@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://www.youtube-nocookie.com blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://image.tmdb.org https://img.youtube.com https://i.ytimg.com data:; connect-src 'self' https://api.themoviedb.org https://tlo.sh https://*.cloudnestra.com https://*; media-src 'self' https: blob:; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com;">
   <title>MovieDB Streamer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,6 +64,13 @@
     </div>
     <div class="title-bar-drag"></div>
     <div class="title-bar-right">
+      <!-- Settings Button -->
+      <button class="settings-btn" id="settings-btn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
       <!-- Account Section -->
       <div class="title-bar-account">
         <button class="account-btn logged-out" id="account-btn">
@@ -189,8 +199,22 @@
                 Continue Watching
               </h3>
             </div>
-            <div class="cards-row" id="continue-watching">
-              <div class="cards-loading"><div class="loader-small"></div></div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="continue-watching" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="continue-watching">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="continue-watching" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -753,6 +777,75 @@
         <span>Waiting for authentication...</span>
       </div>
       <button class="text-btn hidden" id="complete-auth-btn">I've approved the request</button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal hidden" id="settings-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content settings-content">
+      <button class="modal-close" id="settings-modal-close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <div class="modal-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </div>
+      <h2>Settings</h2>
+      
+      <!-- Network Sharing Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <h3>Network Sharing</h3>
+          <p>Make CineStream accessible on your local network</p>
+        </div>
+        
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-label">
+            <span>Enable Network Sharing</span>
+            <span class="settings-toggle-desc">Allow other devices on your network to access CineStream</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="network-sharing-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        
+        <div class="network-status hidden" id="network-status">
+          <div class="network-status-indicator">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="status-text" id="status-text">Starting server...</span>
+          </div>
+          
+          <div class="network-connection-info" id="network-connection-info">
+            <div class="connection-info-row">
+              <span class="connection-label">Local IP:</span>
+              <span class="connection-value" id="connection-ip">-</span>
+            </div>
+            <div class="connection-info-row">
+              <span class="connection-label">Port:</span>
+              <span class="connection-value" id="connection-port">-</span>
+            </div>
+            <div class="connection-info-row">
+              <span class="connection-label">URL:</span>
+              <div class="connection-url-container">
+                <input type="text" class="connection-url" id="connection-url" readonly value="-">
+                <button class="copy-url-btn" id="copy-url-btn" title="Copy URL">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
