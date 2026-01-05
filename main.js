@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const url = require('url');
+const zlib = require('zlib');
 
 let mainWindow;
 let rpcClient = null;
@@ -39,38 +40,42 @@ function initDiscordRPC() {
     });
     
     rpcClient.login({ clientId: DISCORD_CLIENT_ID }).catch(err => {
-      console.log('Discord RPC login failed (this is OK if Discord is not running):', err.message);
+      console.error('Failed to connect to Discord:', err);
       rpcClient = null;
     });
   } catch (error) {
-    console.log('Discord RPC initialization failed (this is OK if Discord is not running):', error.message);
+    console.error('Discord RPC initialization error:', error);
     rpcClient = null;
   }
 }
 
 // Update Discord Rich Presence
-function updateDiscordPresence(presence) {
+function updateDiscordPresence(details, state, largeImageKey, startTimestamp) {
   if (!rpcClient) return;
   
   try {
-    rpcClient.setActivity(presence).catch(err => {
-      console.log('Failed to update Discord presence:', err.message);
+    rpcClient.setActivity({
+      details: details,
+      state: state,
+      largeImageKey: largeImageKey || 'cinestream',
+      largeImageText: 'CineStream',
+      startTimestamp: startTimestamp,
+      buttons: [
+        { label: 'GitHub Repository', url: 'https://github.com/goonernator/CineStream' }
+      ]
     });
   } catch (error) {
-    console.log('Error updating Discord presence:', error.message);
+    console.error('Error updating Discord presence:', error.message);
   }
 }
 
-// Clear Discord Rich Presence
 function clearDiscordPresence() {
   if (!rpcClient) return;
   
   try {
-    rpcClient.clearActivity().catch(err => {
-      console.log('Failed to clear Discord presence:', err.message);
-    });
+    rpcClient.clearActivity();
   } catch (error) {
-    console.log('Error clearing Discord presence:', error.message);
+    console.error('Error clearing Discord presence:', error.message);
   }
 }
 
@@ -120,9 +125,45 @@ async function fetchFromMain(url, options = {}) {
 
 // ==================== NETWORK SERVER ====================
 
+// API Response Cache
+const apiCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+// Cache management functions
+function getCachedResponse(cacheKey) {
+  const cached = apiCache.get(cacheKey);
+  if (!cached) return null;
+  
+  // Check if cache is still valid
+  if (Date.now() - cached.timestamp > CACHE_TTL) {
+    apiCache.delete(cacheKey);
+    return null;
+  }
+  
+  return cached.data;
+}
+
+function setCachedResponse(cacheKey, data) {
+  apiCache.set(cacheKey, {
+    data: data,
+    timestamp: Date.now()
+  });
+  
+  // Clean up old cache entries periodically (keep cache size reasonable)
+  if (apiCache.size > 1000) {
+    const now = Date.now();
+    for (const [key, value] of apiCache.entries()) {
+      if (now - value.timestamp > CACHE_TTL) {
+        apiCache.delete(key);
+      }
+    }
+  }
+}
+
 // Get local network IP address
 function getLocalIPAddress() {
   const interfaces = os.networkInterfaces();
+  
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       // Skip internal (i.e. 127.0.0.1) and non-IPv4 addresses
@@ -347,7 +388,298 @@ function proxyStreamRequest(pathname, req, res) {
   request.end();
 }
 
-// Proxy API request to TMDB with method support
+// Track redirects to prevent loops
+const redirectHistory = new Map();
+const MAX_REDIRECTS = 3;
+
+// SIMPLIFIED Video stream proxy - just forward requests directly
+function proxyVideoStreamRequest(pathname, req, res) {
+  const encodedUrl = pathname.replace('/video-stream/', '');
+  let streamUrl;
+  
+  try {
+    streamUrl = decodeURIComponent(encodedUrl);
+  } catch (error) {
+    if (!res.headersSent) {
+      res.writeHead(400, { 
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end('Invalid stream URL');
+    }
+    return;
+  }
+  
+  if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
+    if (!res.headersSent) {
+      res.writeHead(400, { 
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end('Invalid stream URL');
+    }
+    return;
+  }
+  
+  // Check redirect count
+  const redirectCount = redirectHistory.get(streamUrl) || 0;
+  if (redirectCount >= MAX_REDIRECTS) {
+    if (!res.headersSent) {
+      res.writeHead(500, {
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end('Too many redirects');
+    }
+    redirectHistory.delete(streamUrl);
+    return;
+  }
+  
+  // Set timeout on the HTTP response (not the net.request)
+  const responseTimeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.writeHead(504, { 
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end('Gateway Timeout');
+    }
+  }, 120000); // 120 seconds - longer than HLS timeout
+  
+  // Simple direct proxy - no timeouts on request, just forward
+  const request = net.request({
+    url: streamUrl,
+    method: 'GET'
+  });
+  
+  if (req.headers.range) {
+    request.setHeader('Range', req.headers.range);
+  }
+  
+  request.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+  request.setHeader('Accept', '*/*');
+  request.setHeader('Connection', 'keep-alive');
+  
+  request.on('response', (response) => {
+    clearTimeout(responseTimeout);
+    const statusCode = response.statusCode;
+    
+    // Handle error status codes from source
+    if (statusCode >= 400) {
+      // Forward error status codes
+      const errorHeaders = {
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      };
+      
+      let errorBody = '';
+      response.on('data', (chunk) => {
+        errorBody += chunk.toString();
+      });
+      
+      response.on('end', () => {
+        if (!res.headersSent) {
+          res.writeHead(statusCode, errorHeaders);
+          res.end(`Source server error: ${statusCode}${errorBody ? ' - ' + errorBody.substring(0, 200) : ''}`);
+        }
+      });
+      
+      response.on('error', (err) => {
+        if (!res.headersSent) {
+          res.writeHead(statusCode, errorHeaders);
+          res.end(`Source server error: ${statusCode}`);
+        }
+      });
+      return;
+    }
+    
+    // Store content-encoding before processing headers (we need it for decompression)
+    const contentEncoding = (response.headers['content-encoding'] || response.headers['Content-Encoding'] || '').toLowerCase();
+    
+    // Forward all headers
+    const headers = {};
+    if (response.headers) {
+      Object.keys(response.headers).forEach(key => {
+        const value = response.headers[key];
+        headers[key] = Array.isArray(value) ? value.join(', ') : value;
+      });
+    }
+    
+    // Remove content-encoding and transfer-encoding from headers we send to client
+    delete headers['content-encoding'];
+    delete headers['Content-Encoding'];
+    delete headers['transfer-encoding'];
+    delete headers['Transfer-Encoding'];
+    
+    // Add CORS
+    headers['Access-Control-Allow-Origin'] = '*';
+    headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Range, Content-Type';
+    headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Range, Accept-Ranges';
+    
+    if (req.headers.range && statusCode === 206) {
+      headers['Accept-Ranges'] = 'bytes';
+      headers['Content-Range'] = response.headers['content-range'] || '';
+    }
+    
+    // Check if this is an HLS manifest
+    const isManifest = streamUrl.includes('.m3u8') || 
+      (headers['content-type'] || headers['Content-Type'] || '').toLowerCase().includes('application/vnd.apple.mpegurl') || 
+      (headers['content-type'] || headers['Content-Type'] || '').toLowerCase().includes('application/x-mpegurl');
+    
+    if (isManifest) {
+      let manifestData = '';
+      response.on('data', (chunk) => {
+        manifestData += chunk.toString();
+      });
+      
+      response.on('end', () => {
+        clearTimeout(responseTimeout);
+        try {
+          const baseUrl = new URL(streamUrl);
+          const basePath = baseUrl.origin + baseUrl.pathname.substring(0, baseUrl.pathname.lastIndexOf('/') + 1);
+          
+          const rewrittenManifest = manifestData.split('\n').map(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return line;
+            
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return `/video-stream/${encodeURIComponent(trimmed)}`;
+            } else if (trimmed && !trimmed.startsWith('#')) {
+              try {
+                const absoluteUrl = new URL(trimmed, basePath).href;
+                return `/video-stream/${encodeURIComponent(absoluteUrl)}`;
+              } catch {
+                return line;
+              }
+            }
+            return line;
+          }).join('\n');
+          
+          if (!res.headersSent) {
+            res.writeHead(statusCode, headers);
+            res.end(rewrittenManifest);
+          }
+        } catch (error) {
+          if (!res.headersSent) {
+            res.writeHead(statusCode, headers);
+            res.end(manifestData);
+          }
+        }
+      });
+    } else {
+      // Stream segments directly - write headers immediately
+      if (!res.headersSent) {
+        res.writeHead(statusCode, headers);
+      }
+      
+      // Stream data as it arrives
+      response.on('data', (chunk) => {
+        if (!res.headersSent) {
+          try {
+            res.write(chunk);
+          } catch (err) {
+            // Client disconnected - clear timeout
+            clearTimeout(responseTimeout);
+          }
+        } else {
+          try {
+            res.write(chunk);
+          } catch (err) {
+            // Client disconnected
+          }
+        }
+      });
+      
+      response.on('end', () => {
+        clearTimeout(responseTimeout);
+        if (!res.headersSent) {
+          res.end();
+        } else {
+          res.end();
+        }
+      });
+    }
+    
+    response.on('error', (err) => {
+      clearTimeout(responseTimeout);
+      if (!res.headersSent) {
+        res.writeHead(500, { 
+          'Content-Type': 'text/plain',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end('Response error');
+      }
+    });
+  });
+  
+  request.on('error', (error) => {
+    clearTimeout(responseTimeout);
+    if (!res.headersSent) {
+      res.writeHead(500, { 
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end('Request error: ' + error.message);
+    }
+  });
+  
+  request.end();
+}
+
+// Proxy stream API request (for tlo.sh stream API)
+async function proxyStreamAPIRequest(pathname, req, res) {
+  const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
+  
+  // Remove /streams-api prefix and construct URL
+  let apiPath = pathname.replace('/streams-api', '');
+  const streamUrl = `${STREAMS_API_BASE}${apiPath}`;
+  
+  // Create cache key from full URL
+  const cacheKey = `STREAM_API:${streamUrl}`;
+  
+  try {
+    // Check cache first
+    const cachedResponse = getCachedResponse(cacheKey);
+    if (cachedResponse) {
+      res.writeHead(200, { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'X-Cache': 'HIT'
+      });
+      res.end(cachedResponse);
+      return;
+    }
+    
+    // Cache miss - fetch from API
+    const result = await fetchFromMain(streamUrl, { method: 'GET' });
+    
+    // Only cache successful responses
+    if (result.status >= 200 && result.status < 300) {
+      setCachedResponse(cacheKey, result.data);
+    }
+    
+    res.writeHead(result.status, { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'X-Cache': 'MISS'
+    });
+    res.end(result.data);
+  } catch (error) {
+    console.error('Stream API proxy error:', error);
+    res.writeHead(500, { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({ error: 'Stream API proxy request failed' }));
+  }
+}
+
+// Proxy API request to TMDB with method support and caching
 async function proxyAPIRequestWithMethod(pathname, req, res) {
   const TMDB_API_KEY = '111909b8747aeff1169944069465906c';
   const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
@@ -356,6 +688,9 @@ async function proxyAPIRequestWithMethod(pathname, req, res) {
   let apiPath = pathname.replace('/api', '');
   const separator = apiPath.includes('?') ? '&' : '?';
   const apiUrl = `${TMDB_BASE_URL}${apiPath}${separator}api_key=${TMDB_API_KEY}`;
+  
+  // Create cache key from full URL (including query params)
+  const cacheKey = `${req.method || 'GET'}:${apiUrl}`;
   
   try {
     const options = {
@@ -376,6 +711,7 @@ async function proxyAPIRequestWithMethod(pathname, req, res) {
           options.headers['Content-Type'] = 'application/json';
         }
         
+        // POST/DELETE requests are not cached (they modify data)
         try {
           const result = await fetchFromMain(apiUrl, options);
           res.writeHead(result.status, { 
@@ -397,13 +733,34 @@ async function proxyAPIRequestWithMethod(pathname, req, res) {
       return;
     }
     
-    // GET request
+    // GET request - check cache first
+    const cachedResponse = getCachedResponse(cacheKey);
+    if (cachedResponse) {
+      res.writeHead(200, { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'X-Cache': 'HIT'
+      });
+      res.end(cachedResponse);
+      return;
+    }
+    
+    // Cache miss - fetch from API
     const result = await fetchFromMain(apiUrl, options);
+    
+    // Only cache successful responses
+    if (result.status >= 200 && result.status < 300) {
+      setCachedResponse(cacheKey, result.data);
+    }
+    
     res.writeHead(result.status, { 
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'X-Cache': 'MISS'
     });
     res.end(result.data);
   } catch (error) {
@@ -447,6 +804,18 @@ async function startNetworkServer() {
         return;
       }
       
+      // Stream API proxy (for tlo.sh stream requests)
+      if (pathname.startsWith('/streams-api/')) {
+        proxyStreamAPIRequest(pathname, req, res);
+        return;
+      }
+      
+      // Video stream proxy (for actual video playback - HLS, MP4, etc.)
+      if (pathname.startsWith('/video-stream/')) {
+        proxyVideoStreamRequest(pathname, req, res);
+        return;
+      }
+      
       // Stream proxy for LiveTV channels
       if (pathname.startsWith('/stream/')) {
         proxyStreamRequest(pathname, req, res);
@@ -468,42 +837,23 @@ async function startNetworkServer() {
       // Check if file exists
       fs.access(normalizedPath, fs.constants.F_OK, (err) => {
         if (err) {
-          // If file doesn't exist, serve index.html for SPA routing
-          if (filePath !== 'index.html') {
-            const indexPath = path.join(__dirname, 'index.html');
-            serveStaticFile(indexPath, res);
-          } else {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Not found');
-          }
-        } else {
-          serveStaticFile(normalizedPath, res);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('File not found');
+          return;
         }
+        
+        serveStaticFile(normalizedPath, res);
       });
     });
     
-    return new Promise((resolve, reject) => {
-      networkServer.listen(port, '0.0.0.0', () => {
-        networkServerPort = port;
-        networkServerIP = ip;
-        console.log(`Network server started on http://${ip}:${port}`);
-        resolve({ 
-          success: true, 
-          ip: ip, 
-          port: port,
-          url: `http://${ip}:${port}`
-        });
-      });
-      
-      networkServer.on('error', (err) => {
-        console.error('Network server error:', err);
-        networkServer = null;
-        networkServerPort = null;
-        networkServerIP = null;
-        reject({ success: false, error: err.message });
-      });
+    networkServer.listen(port, '0.0.0.0', () => {
+      networkServerPort = port;
+      networkServerIP = ip;
+      console.log(`Network server started on http://${ip}:${port}`);
     });
-  } catch (error) {
+    
+    return { success: true, ip, port };
+    } catch (error) {
     console.error('Failed to start network server:', error);
     return { success: false, error: error.message };
   }
@@ -511,19 +861,14 @@ async function startNetworkServer() {
 
 // Stop network server
 function stopNetworkServer() {
-  return new Promise((resolve) => {
-    if (networkServer) {
-      networkServer.close(() => {
-        console.log('Network server stopped');
-        networkServer = null;
-        networkServerPort = null;
-        networkServerIP = null;
-        resolve({ success: true });
-      });
-    } else {
-      resolve({ success: true });
-    }
-  });
+  if (networkServer) {
+    networkServer.close();
+    networkServer = null;
+    networkServerPort = null;
+    networkServerIP = null;
+    return { success: true };
+  }
+  return { success: false, error: 'Server not running' };
 }
 
 // Get network server status
@@ -532,184 +877,134 @@ function getNetworkServerStatus() {
     running: networkServer !== null,
     ip: networkServerIP,
     port: networkServerPort,
-    url: networkServer && networkServerIP && networkServerPort 
-      ? `http://${networkServerIP}:${networkServerPort}` 
-      : null
+    url: networkServer ? `http://${networkServerIP}:${networkServerPort}` : null
   };
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 700,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-      autoplayPolicy: 'no-user-gesture-required'
-    },
-    frame: false,
-    titleBarStyle: 'hidden',
-    backgroundColor: '#0a0a0f',
-    icon: path.join(__dirname, 'assets', 'icon.png')
-  });
+// ==================== IPC HANDLERS ====================
 
-  mainWindow.loadFile('index.html');
+// Window controls
+ipcMain.on('minimize-window', () => {
+  if (mainWindow) mainWindow.minimize();
+});
 
-  // Handle window controls
-  ipcMain.on('minimize-window', () => {
-    mainWindow.minimize();
-  });
-
-  ipcMain.on('maximize-window', () => {
+ipcMain.on('maximize-window', () => {
+  if (mainWindow) {
     if (mainWindow.isMaximized()) {
       mainWindow.unmaximize();
     } else {
       mainWindow.maximize();
     }
-  });
+  }
+});
 
-  ipcMain.on('close-window', () => {
-    mainWindow.close();
-  });
+ipcMain.on('close-window', () => {
+  if (mainWindow) mainWindow.close();
+});
 
-  // Handle opening external URLs
-  ipcMain.handle('open-external', async (event, url) => {
-    await shell.openExternal(url);
-  });
+// Network server
+ipcMain.handle('network-server-start', async () => {
+  return await startNetworkServer();
+});
 
-  // Handle Discord Rich Presence updates
-  ipcMain.handle('discord-set-presence', async (event, presence) => {
-    updateDiscordPresence(presence);
-  });
+ipcMain.handle('network-server-stop', () => {
+  return stopNetworkServer();
+});
 
-  ipcMain.handle('discord-clear-presence', async (event) => {
-    clearDiscordPresence();
-  });
+ipcMain.handle('network-server-status', () => {
+  return getNetworkServerStatus();
+});
 
-  // Handle subtitle fetching (bypasses CORS)
-  ipcMain.handle('fetch-subtitles', async (event, { type, tmdbId, imdbId, apiKey, season, episode }) => {
-    try {
-      // Try OpenSubtitles first if API key provided
-      if (apiKey && imdbId) {
-        const searchUrl = type === 'tv' && season && episode
-          ? `https://api.opensubtitles.com/api/v1/subtitles?imdb_id=${imdbId}&languages=en&season_number=${season}&episode_number=${episode}`
-          : `https://api.opensubtitles.com/api/v1/subtitles?imdb_id=${imdbId}&languages=en`;
-        
-        const searchResult = await fetchFromMain(searchUrl, {
-          headers: {
-            'Api-Key': apiKey,
-            'Content-Type': 'application/json',
-            'User-Agent': 'CineStream v1.0.0'
-          }
-        });
-        
-        if (searchResult.ok) {
-          const data = JSON.parse(searchResult.data);
-          if (data.data && data.data.length > 0) {
-            const subtitles = [];
-            for (const sub of data.data.slice(0, 5)) {
-              const fileId = sub.attributes?.files?.[0]?.file_id;
-              if (!fileId) continue;
-              
-              try {
-                const downloadResult = await fetchFromMain('https://api.opensubtitles.com/api/v1/download', {
-                  method: 'POST',
-                  headers: {
-                    'Api-Key': apiKey,
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'CineStream v1.0.0',
-                    'Accept': 'application/json'
-                  },
-                  body: JSON.stringify({ file_id: fileId })
-                });
-                
-                if (downloadResult.ok) {
-                  const downloadData = JSON.parse(downloadResult.data);
-                  if (downloadData.link) {
-                    subtitles.push({
-                      url: downloadData.link,
-                      label: sub.attributes?.language || 'English',
-                      lang: sub.attributes?.language || 'en',
-                      source: 'OpenSubtitles'
-                    });
-                  }
-                }
-              } catch (downloadError) {
-                // Skip failed downloads
-              }
-            }
-            if (subtitles.length > 0) return subtitles;
-          }
-        }
-      }
-      
-      // Fallback: Try subdl.com as alternative
-      const subdlUrl = type === 'tv' && season && episode
-        ? `https://api.subdl.com/api/v1/subtitles?tmdb_id=${tmdbId}&type=tv&season_number=${season}&episode_number=${episode}&languages=en`
-        : `https://api.subdl.com/api/v1/subtitles?tmdb_id=${tmdbId}&type=movie&languages=en`;
-      
-      const subdlResult = await fetchFromMain(subdlUrl);
-      
-      if (subdlResult.ok) {
-        const data = JSON.parse(subdlResult.data);
-        if (data.subtitles && data.subtitles.length > 0) {
-          return data.subtitles.slice(0, 5).map(sub => ({
-            url: `https://dl.subdl.com${sub.url}`,
-            label: sub.language || sub.lang || 'English',
-            lang: sub.lang || 'en',
-            source: 'Subdl'
-          }));
-        }
-      }
-      
-      return [];
-    } catch (error) {
-      return [];
+ipcMain.handle('network-get-local-ip', () => {
+  return getLocalIPAddress();
+});
+
+// Discord Rich Presence
+ipcMain.handle('discord-set-presence', (event, presence) => {
+  if (presence) {
+    updateDiscordPresence(
+      presence.details,
+      presence.state,
+      presence.largeImageKey,
+      presence.startTimestamp
+    );
+  }
+});
+
+ipcMain.handle('discord-clear-presence', () => {
+  clearDiscordPresence();
+});
+
+// External links
+ipcMain.handle('open-external', (event, url) => {
+  shell.openExternal(url);
+});
+
+// Subtitles (if needed)
+ipcMain.handle('fetch-subtitles', async (event, options) => {
+  // Placeholder for subtitle fetching if needed
+  return { success: false, error: 'Not implemented' };
+});
+
+// ==================== WINDOW MANAGEMENT ====================
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 800,
+    minHeight: 600,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0a0a0a',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false
     }
   });
 
-  // Network server IPC handlers
-  ipcMain.handle('network-server-start', async () => {
-    return await startNetworkServer();
+  mainWindow.loadFile('index.html');
+
+  // Initialize Discord RPC after window is ready
+  mainWindow.webContents.once('did-finish-load', () => {
+    initDiscordRPC();
   });
 
-  ipcMain.handle('network-server-stop', async () => {
-    return await stopNetworkServer();
-  });
-
-  ipcMain.handle('network-server-status', () => {
-    return getNetworkServerStatus();
-  });
-
-  ipcMain.handle('network-get-local-ip', () => {
-    return getLocalIPAddress();
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    if (rpcClient) {
+      clearDiscordPresence();
+      rpcClient.destroy();
+      rpcClient = null;
+    }
+    if (networkServer) {
+      stopNetworkServer();
+    }
   });
 }
 
 app.whenReady().then(() => {
   createWindow();
-  initDiscordRPC();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
+  if (rpcClient) {
+    clearDiscordPresence();
+    rpcClient.destroy();
+    rpcClient = null;
+  }
+  if (networkServer) {
+    stopNetworkServer();
+  }
   if (process.platform !== 'darwin') {
-    if (rpcClient) {
-      rpcClient.destroy().catch(() => {});
-    }
-    // Stop network server on app quit
-    if (networkServer) {
-      stopNetworkServer();
-    }
     app.quit();
   }
 });
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-

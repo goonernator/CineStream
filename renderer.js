@@ -3,7 +3,14 @@
 const TMDB_API_KEY = '111909b8747aeff1169944069465906c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
-const STREAMS_API_BASE = 'https://tlo.sh/mvsapi/api/streams';
+
+// Detect if running in browser (not Electron) - must be defined early
+const isBrowserMode = typeof window !== 'undefined' && !window.electronAPI;
+
+// Stream API base URL - use proxy when in browser mode
+const STREAMS_API_BASE = isBrowserMode 
+  ? '/streams-api' 
+  : 'https://tlo.sh/mvsapi/api/streams';
 
 // ==================== ACCENT COLOR THEMING ====================
 
@@ -84,9 +91,6 @@ if (document.readyState === 'loading') {
 } else {
   setupNavbarScroll();
 }
-
-// Detect if running in browser (not Electron)
-const isBrowserMode = typeof window !== 'undefined' && !window.electronAPI;
 
 // Hide Electron-only UI elements in browser mode
 if (isBrowserMode) {
@@ -1467,6 +1471,11 @@ function showPlayer(streamUrl) {
     return;
   }
   
+  // Proxy stream URL through network server if in browser mode
+  if (isBrowserMode && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
+    streamUrl = `/video-stream/${encodeURIComponent(streamUrl)}`;
+  }
+  
   hideAllStates();
   playerContainer.classList.remove('hidden');
   
@@ -1498,7 +1507,27 @@ function showPlayer(streamUrl) {
         // Enable subtitle parsing
         enableCEA708Captions: true,
         enableWebVTT: true,
-        renderTextTracksNatively: true
+        renderTextTracksNatively: true,
+        // Increase timeouts significantly for network server proxy
+        fragLoadingTimeOut: 120000, // 120 seconds (increased to handle very slow proxies)
+        manifestLoadingTimeOut: 120000, // 120 seconds
+        levelLoadingTimeOut: 120000, // 120 seconds
+        // Retry configuration
+        fragLoadingMaxRetry: 6, // Retry up to 6 times (increased from 4)
+        manifestLoadingMaxRetry: 6, // Retry up to 6 times (increased from 4)
+        levelLoadingMaxRetry: 6, // Retry up to 6 times (increased from 4)
+        fragLoadingRetryDelay: 1000, // Wait 1 second between retries (reduced for faster recovery)
+        // Network settings
+        maxBufferLength: 60, // Max buffer length in seconds
+        maxMaxBufferLength: 120, // Max max buffer length
+        maxBufferSize: 60 * 1000 * 1000, // 60MB buffer
+        maxBufferHole: 0.5, // Max buffer hole tolerance
+        // Additional settings for better performance
+        startLevel: -1, // Auto-select best quality
+        capLevelToPlayerSize: true, // Cap quality to player size
+        abrEwmaDefaultEstimate: 500000, // Default bandwidth estimate
+        abrBandWidthFactor: 0.95, // Bandwidth factor
+        abrBandWidthUpFactor: 0.7 // Bandwidth up factor
       });
       
       hlsInstance.loadSource(streamUrl);
@@ -1565,13 +1594,43 @@ function showPlayer(streamUrl) {
       
       hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         console.error('HLS Error:', data);
+        
+        // Handle timeout errors (non-fatal)
+        if (!data.fatal && data.details === 'fragLoadTimeOut') {
+          console.warn('Fragment load timeout, will retry...');
+          // HLS.js will automatically retry, but we can also manually trigger recovery
+          if (hlsInstance) {
+            hlsInstance.startLoad();
+          }
+          return;
+        }
+        
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              hlsInstance.startLoad();
+              console.warn('Network error, attempting to recover...');
+              try {
+                hlsInstance.startLoad();
+              } catch (e) {
+                console.error('Failed to recover from network error:', e);
+                hidePlayer();
+                showError('Playback Error', 'Network error. Please check your connection and try again.');
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              hlsInstance.recoverMediaError();
+              console.warn('Media error, attempting to recover...');
+              try {
+                hlsInstance.recoverMediaError();
+              } catch (e) {
+                console.error('Failed to recover from media error:', e);
+                // Try starting load again
+                try {
+                  hlsInstance.startLoad();
+                } catch (e2) {
+                  hidePlayer();
+                  showError('Playback Error', 'Unable to play this stream. Please try another quality.');
+                }
+              }
               break;
             default:
               console.error('Fatal error, cannot recover');
@@ -2765,7 +2824,8 @@ async function loadHomepage() {
     loadCategory('tv-popular', 'tv', 'popular'),
     loadCategory('tv-new', 'tv', 'on_the_air'),
     loadGenres(), // Load genre sections
-    loadProviders() // Load provider sections
+    loadProviders(), // Load provider sections
+    loadAdultMovies() // Load adult movies section
   ]);
 }
 
@@ -2791,6 +2851,45 @@ async function loadCategory(containerId, mediaType, category) {
   } catch (error) {
     console.error(`Failed to load ${category}:`, error);
     container.innerHTML = '<p class="no-content">Failed to load</p>';
+  }
+}
+
+// Load adult movies category
+async function loadAdultMovies() {
+  const container = document.getElementById('adult-movies');
+  const section = document.getElementById('adult-movies-section');
+  if (!container || !section) return;
+  
+  try {
+    // Use discover endpoint with include_adult=true to get adult content
+    // Sort by popularity and get movies with adult content
+    const response = await apiFetch(
+      `${getAPIBaseURL()}/discover/movie?api_key=${TMDB_API_KEY}&include_adult=true&sort_by=popularity.desc&page=1`
+    );
+    const data = await response.json();
+    
+    if (data.results && data.results.length > 0) {
+      // Filter for movies marked as adult content
+      // The include_adult=true parameter should return adult content, but we'll also filter by the adult flag
+      const adultMovies = data.results.filter(movie => movie.adult === true);
+      
+      // If we have adult movies, use them; otherwise use all results from the query
+      const moviesToShow = adultMovies.length > 0 ? adultMovies : data.results;
+      const filteredResults = filterIncompleteItems(moviesToShow);
+      
+      if (filteredResults.length > 0) {
+        renderCards(container, filteredResults.slice(0, 20), 'movie');
+        setupCarouselNavigation('adult-movies');
+        section.style.display = 'block';
+      } else {
+        section.style.display = 'none';
+      }
+    } else {
+      section.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Failed to load adult movies:', error);
+    section.style.display = 'none';
   }
 }
 
