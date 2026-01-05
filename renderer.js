@@ -59,6 +59,32 @@ if (document.readyState === 'loading') {
   applyRandomAccentTheme();
 }
 
+// Navbar scroll detection
+function setupNavbarScroll() {
+  const titleBar = document.querySelector('.title-bar');
+  if (!titleBar) return;
+  
+  let lastScroll = 0;
+  function handleScroll() {
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    if (scrollY > 20) {
+      titleBar.classList.add('scrolled');
+    } else {
+      titleBar.classList.remove('scrolled');
+    }
+    lastScroll = scrollY;
+  }
+  
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  handleScroll(); // Check initial state
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupNavbarScroll);
+} else {
+  setupNavbarScroll();
+}
+
 // Detect if running in browser (not Electron)
 const isBrowserMode = typeof window !== 'undefined' && !window.electronAPI;
 
@@ -527,12 +553,29 @@ function displayListResults(listType, items) {
     `;
   }).join('');
   
+  // Setup click handlers for list items
   listEl.querySelectorAll('.search-result-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
       const id = item.dataset.id;
-      const type = item.dataset.type;
-      loadMedia(id, type);
+      const type = item.dataset.type || 'movie';
+      
+      if (id) {
+        // Hide homepage and lists container
+        const homepage = document.getElementById('homepage');
+        const listsContainer = document.querySelector('.lists-container');
+        if (homepage) homepage.classList.add('hidden');
+        if (listsContainer) listsContainer.classList.add('hidden');
+        
+        // Load and show the media details page
+        await loadMedia(parseInt(id), type);
+      }
     });
+    
+    // Also make sure cursor shows pointer
+    item.style.cursor = 'pointer';
   });
 }
 
@@ -1419,6 +1462,11 @@ async function loadMovie(movieId) {
 // displayMovieDetails is now handled by displayMediaDetails
 
 function showPlayer(streamUrl) {
+  if (!streamUrl) {
+    showError('No stream URL provided', 'Cannot play stream without a valid URL');
+    return;
+  }
+  
   hideAllStates();
   playerContainer.classList.remove('hidden');
   
@@ -2252,6 +2300,125 @@ function getAllWatchProgress() {
 
 // ==================== HOMEPAGE ====================
 
+// Load hero section with most recently watched item
+async function loadHero() {
+  const heroSection = document.getElementById('hero-section');
+  const heroBackdrop = document.getElementById('hero-backdrop');
+  const heroTitle = document.getElementById('hero-title');
+  const heroDescription = document.getElementById('hero-description');
+  const heroRatingBadge = document.getElementById('hero-rating-badge');
+  const heroRatingText = document.getElementById('hero-rating-text');
+  const heroYear = document.getElementById('hero-year');
+  const heroPlayBtn = document.getElementById('hero-play-btn');
+  const heroInfoBtn = document.getElementById('hero-info-btn');
+  
+  if (!heroSection) return;
+  
+  try {
+    // Get the most recently watched item
+    const progressItems = getAllWatchProgress();
+    
+    let featured = null;
+    let watchProgress = null;
+    
+    if (progressItems.length > 0) {
+      // Get the most recent item (first in sorted list)
+      watchProgress = progressItems[0];
+      
+      // Fetch full details from TMDB
+      const response = await apiFetch(
+        `${getAPIBaseURL()}/${watchProgress.mediaType}/${watchProgress.id}?api_key=${TMDB_API_KEY}`
+      );
+      
+      if (response.ok) {
+        featured = await response.json();
+        featured.watchProgress = watchProgress;
+      }
+    }
+    
+    // Fallback to trending movie if no watch progress
+    if (!featured) {
+      const response = await apiFetch(`${getAPIBaseURL()}/trending/movie/week?api_key=${TMDB_API_KEY}`);
+      const data = await response.json();
+      
+      if (!data.results || data.results.length === 0) {
+        heroSection.style.display = 'none';
+        return;
+      }
+      
+      // Get the first trending movie with backdrop
+      featured = data.results.find(m => m.backdrop_path) || data.results[0];
+    }
+    
+    if (featured.backdrop_path) {
+      heroBackdrop.src = `${TMDB_IMAGE_BASE}/w1280${featured.backdrop_path}`;
+      heroBackdrop.style.display = 'block';
+    } else {
+      heroBackdrop.style.display = 'none';
+    }
+    
+    heroTitle.textContent = featured.title || featured.name || 'Unknown';
+    heroDescription.textContent = featured.overview || 'No description available.';
+    
+    // Rating badge
+    if (featured.vote_average) {
+      heroRatingText.textContent = featured.vote_average.toFixed(1);
+      heroRatingBadge.style.display = 'flex';
+    } else {
+      heroRatingBadge.style.display = 'none';
+    }
+    
+    // Year
+    if (featured.release_date || featured.first_air_date) {
+      const year = (featured.release_date || featured.first_air_date).split('-')[0];
+      heroYear.textContent = year;
+      heroYear.style.display = 'inline';
+    } else {
+      heroYear.style.display = 'none';
+    }
+    
+    // Setup buttons
+    const mediaType = featured.media_type || watchProgress?.mediaType || 'movie';
+    const mediaId = featured.id;
+    
+    heroPlayBtn.onclick = () => {
+      if (watchProgress && watchProgress.mediaType === 'tv' && watchProgress.season && watchProgress.episode) {
+        // For TV shows with progress, load the specific episode
+        loadMedia(mediaId, 'tv').then(() => {
+          // Load the specific season and episode
+          if (typeof loadSelectedEpisode === 'function') {
+            loadSelectedEpisode(watchProgress.season, watchProgress.episode);
+          }
+          setTimeout(() => {
+            const playButton = document.getElementById('play-button');
+            if (playButton && !playButton.disabled) {
+              playButton.click();
+            }
+          }, 500);
+        });
+      } else {
+        // For movies or TV shows without specific episode, load normally
+        loadMedia(mediaId, mediaType);
+        setTimeout(() => {
+          const playButton = document.getElementById('play-button');
+          if (playButton && !playButton.disabled) {
+            playButton.click();
+          }
+        }, 300);
+      }
+    };
+    
+    heroInfoBtn.onclick = () => {
+      loadMedia(mediaId, mediaType);
+    };
+    
+    heroSection.style.display = 'block';
+  } catch (error) {
+    console.error('Failed to load hero:', error);
+    heroSection.style.display = 'none';
+  }
+}
+
 // Load latest movies and TV shows in a large carousel
 async function loadLatest() {
   const track = document.getElementById('upcoming-carousel-track');
@@ -2285,11 +2452,16 @@ async function loadLatest() {
       return;
     }
     
-    // Render latest carousel cards
-    renderUpcomingCarousel(track, shuffled);
+    // Render using regular category cards (mixed media types)
+    // We'll render movies and TV shows together
+    const movieItems = shuffled.filter(item => item.media_type === 'movie');
+    const tvItems = shuffled.filter(item => item.media_type === 'tv');
+    
+    // Render all items together
+    renderCards(track, shuffled, 'mixed');
     
     // Setup carousel navigation
-    setupUpcomingCarousel();
+    setupCarouselNavigation('upcoming-carousel-track');
   } catch (error) {
     console.error('Failed to load latest:', error);
     section.style.display = 'none';
@@ -2578,6 +2750,8 @@ function renderContinueWatchingCards(container, items) {
 }
 
 async function loadHomepage() {
+  // Load hero section first
+  await loadHero();
   // Load latest first, then continue watching, then other categories
   await loadLatest();
   await loadContinueWatching();
@@ -3134,7 +3308,7 @@ function setupCarouselNavigation(carouselId) {
   setTimeout(updateButtons, 100);
 }
 
-function renderCards(container, items, mediaType) {
+function renderCards(container, items, mediaType = 'movie') {
   container.innerHTML = items.map((item, index) => {
     const title = escapeHtml(item.title || item.name || 'Unknown');
     const year = (item.release_date || item.first_air_date || '').split('-')[0] || '';
@@ -3144,8 +3318,11 @@ function renderCards(container, items, mediaType) {
       : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 342 513"%3E%3Crect fill="%231a1a2e" width="342" height="513"/%3E%3C/svg%3E';
     const overview = item.overview ? escapeHtml(item.overview.substring(0, 150)) : 'No description available.';
     
+    // Determine the actual media type for each item (for mixed categories)
+    const itemMediaType = item.media_type || mediaType;
+    
     return `
-      <div class="media-card" data-id="${item.id}" data-type="${mediaType}">
+      <div class="media-card" data-id="${item.id}" data-type="${itemMediaType}">
         <div class="card-poster-wrapper">
           <img class="card-poster" src="${poster}" alt="" loading="lazy">
           <div class="card-rating">
@@ -3163,7 +3340,7 @@ function renderCards(container, items, mediaType) {
         <div class="card-hovercard">
           <div class="hovercard-poster">
             <img src="${poster}" alt="" loading="lazy">
-            <div class="hovercard-trailer" data-id="${item.id}" data-type="${mediaType}">
+            <div class="hovercard-trailer" data-id="${item.id}" data-type="${itemMediaType}">
               <div class="trailer-preview-container"></div>
               <div class="trailer-loading">
                 <div class="loader-small"></div>
@@ -4054,6 +4231,15 @@ function processStreams(streamData) {
   
   let allStreams = [];
   let allSubtitles = [];
+  
+  if (!streamData) {
+    // Show message that no streams are available
+    if (streamInfo) {
+      streamInfo.innerHTML = '<div class="stream-unavailable">No streams available for this title</div>';
+    }
+    playButton.disabled = true;
+    return;
+  }
   
   if (streamData && streamData.streams) {
     for (const providerName of Object.keys(streamData.streams)) {

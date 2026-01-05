@@ -10,7 +10,7 @@
   <title>MovieDB Streamer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.14/dist/hls.min.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
@@ -19,17 +19,7 @@
   <!-- Custom Title Bar -->
   <div class="title-bar">
     <div class="title-bar-left">
-      <div class="app-logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
-          <line x1="7" y1="2" x2="7" y2="22"/>
-          <line x1="17" y1="2" x2="17" y2="22"/>
-          <line x1="2" y1="12" x2="22" y2="12"/>
-          <line x1="2" y1="7" x2="7" y2="7"/>
-          <line x1="2" y1="17" x2="7" y2="17"/>
-          <line x1="17" y1="17" x2="22" y2="17"/>
-          <line x1="17" y1="7" x2="22" y2="7"/>
-        </svg>
+      <div class="app-logo" id="app-logo">
         <span>CineStream</span>
       </div>
       <!-- Navigation Tabs -->
@@ -167,28 +157,47 @@
       </div>
       <!-- Homepage -->
       <div class="homepage" id="homepage">
-        <div class="homepage-scroll">
-          <!-- Upcoming Section -->
-          <div class="upcoming-section" id="upcoming-section">
-            <div class="upcoming-carousel-wrapper">
-              <button class="upcoming-carousel-btn upcoming-carousel-prev" id="upcoming-carousel-prev" aria-label="Previous">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M15 18l-6-6 6-6"/>
-                </svg>
-              </button>
-              <div class="upcoming-carousel-container">
-                <div class="upcoming-carousel-track" id="upcoming-carousel-track">
-                  <div class="cards-loading"><div class="loader-small"></div></div>
-                </div>
-              </div>
-              <button class="upcoming-carousel-btn upcoming-carousel-next" id="upcoming-carousel-next" aria-label="Next">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M9 18l6-6-6-6"/>
-                </svg>
-              </button>
+        <!-- Hero Section -->
+        <div class="hero-section" id="hero-section">
+            <div class="hero-background" id="hero-background">
+              <img id="hero-backdrop" src="" alt="" style="display: none;">
             </div>
-          </div>
+            <div class="hero-gradient-top"></div>
+            <div class="hero-gradient-side"></div>
+            <div class="hero-content">
+              <div class="hero-badges" id="hero-badges">
+                <div class="hero-rating-badge" id="hero-rating-badge" style="display: none;">
+                  <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                  <span id="hero-rating-text"></span>
+                </div>
+                <span class="hero-year" id="hero-year" style="display: none;"></span>
+                <span class="hero-quality-badge" id="hero-quality-badge" style="display: none;">4K Ultra HD</span>
+              </div>
+              <h1 class="hero-title" id="hero-title"></h1>
+              <p class="hero-description" id="hero-description"></p>
+              <div class="hero-actions">
+                <button class="btn-primary" id="hero-play-btn">
+                  <svg viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px;">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  <span>Watch Now</span>
+                </button>
+                <button class="btn-secondary" id="hero-info-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                  </svg>
+                  <span>More Info</span>
+                </button>
+              </div>
+            </div>
+        </div>
 
+        <!-- Section Container -->
+        <div class="section-container">
           <!-- Continue Watching Section -->
           <div class="category-section" id="continue-watching-section" style="display: none;">
             <div class="category-header">
@@ -218,13 +227,34 @@
             </div>
           </div>
 
-          <!-- TV Shows Section -->
-          <div class="section-header tv-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
-              <polyline points="17 2 12 7 7 2"/>
-            </svg>
-            <h2>TV Shows</h2>
+          <!-- Latest Releases -->
+          <div class="category-section" id="upcoming-section">
+            <div class="category-header">
+              <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                Latest Releases
+              </h3>
+            </div>
+            <div class="carousel-wrapper">
+              <button class="carousel-btn carousel-prev" data-carousel="upcoming" aria-label="Previous">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 18l-6-6 6-6"/>
+                </svg>
+              </button>
+              <div class="carousel-container">
+                <div class="cards-row carousel-track" id="upcoming-carousel-track">
+                  <div class="cards-loading"><div class="loader-small"></div></div>
+                </div>
+              </div>
+              <button class="carousel-btn carousel-next" data-carousel="upcoming" aria-label="Next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Airing Now (TV) -->
@@ -255,6 +285,15 @@
                 </svg>
               </button>
             </div>
+          </div>
+
+          <!-- TV Shows Section -->
+          <div class="section-header tv-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+            <h2>TV Shows</h2>
           </div>
 
           <!-- Popular TV -->
