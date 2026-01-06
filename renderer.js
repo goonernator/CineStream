@@ -1479,6 +1479,10 @@ function showPlayer(streamUrl) {
   hideAllStates();
   playerContainer.classList.remove('hidden');
   
+  // Ensure audio is enabled
+  videoPlayer.muted = false;
+  videoPlayer.volume = 1.0;
+  
   // Clear existing text tracks and subtitle data to prevent duplicates
   while (videoPlayer.firstChild) {
     videoPlayer.removeChild(videoPlayer.firstChild);
@@ -1499,6 +1503,12 @@ function showPlayer(streamUrl) {
       if (hlsInstance) {
         hlsInstance.destroy();
       }
+      
+      // Track 429 errors to prevent infinite retry loops
+      let last429ErrorTime = 0;
+      let consecutive429Errors = 0;
+      const MAX_429_RETRIES = 3;
+      const RATE_LIMIT_DELAY = 5000; // 5 seconds between 429 retries
       
       hlsInstance = new Hls({
         enableWorker: true,
@@ -1534,6 +1544,9 @@ function showPlayer(streamUrl) {
       hlsInstance.attachMedia(videoPlayer);
       
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, async (event, data) => {
+        // Ensure audio is enabled
+        videoPlayer.muted = false;
+        videoPlayer.volume = 1.0;
         videoPlayer.play().catch(console.error);
         
         // Resume from saved position if available
@@ -1593,32 +1606,106 @@ function showPlayer(streamUrl) {
       });
       
       hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error:', data);
+        // Check for 429 errors specifically
+        const is429Error = data.error && data.error.message && data.error.message.includes('429');
         
-        // Handle timeout errors (non-fatal)
-        if (!data.fatal && data.details === 'fragLoadTimeOut') {
-          console.warn('Fragment load timeout, will retry...');
-          // HLS.js will automatically retry, but we can also manually trigger recovery
-          if (hlsInstance) {
-            hlsInstance.startLoad();
+        if (is429Error) {
+          const now = Date.now();
+          consecutive429Errors++;
+          
+          // If we've hit too many 429 errors in quick succession, stop retrying
+          if (consecutive429Errors > MAX_429_RETRIES) {
+            if (now - last429ErrorTime < RATE_LIMIT_DELAY * 2) {
+              console.error('Too many 429 errors, stopping playback. Server is rate limiting.');
+              hidePlayer();
+              showError('Rate Limited', 'Too many requests. Please wait a moment and try again.');
+              return;
+            } else {
+              // Reset counter if enough time has passed
+              consecutive429Errors = 0;
+            }
           }
+          
+          last429ErrorTime = now;
+          
+          // Suppress repeated 429 error logs (only log first few)
+          if (consecutive429Errors <= 2) {
+            console.warn(`HLS Rate Limited (429) - Attempt ${consecutive429Errors}/${MAX_429_RETRIES}`);
+          }
+          
+          // For 429 errors, wait before retrying
+          if (data.fatal) {
+            setTimeout(() => {
+              if (hlsInstance && consecutive429Errors <= MAX_429_RETRIES) {
+                try {
+                  hlsInstance.startLoad();
+                } catch (e) {
+                  console.error('Failed to recover from rate limit:', e);
+                }
+              }
+            }, RATE_LIMIT_DELAY);
+          }
+          return;
+        }
+        
+        // Reset 429 counter on other errors
+        consecutive429Errors = 0;
+        
+        // Suppress expected non-fatal errors that HLS.js handles automatically
+        const suppressErrors = [
+          'fragLoadTimeOut',
+          'fragLoadError',
+          'levelLoadError',
+          'manifestLoadError',
+          'fragParsingError' // Common non-fatal parsing errors
+        ];
+        
+        // Only log if it's a fatal error or an unexpected non-fatal error
+        if (data.fatal || !suppressErrors.includes(data.details)) {
+          const errorInfo = {
+            type: data.type,
+            details: data.details,
+            fatal: data.fatal,
+            error: data.error ? data.error.message : null,
+            url: data.url || null
+          };
+          
+          if (data.fatal) {
+            console.error('HLS Fatal Error:', JSON.stringify(errorInfo, null, 2));
+          } else {
+            console.warn('HLS Non-Fatal Error:', JSON.stringify(errorInfo, null, 2));
+          }
+        }
+        
+        // Handle timeout errors (non-fatal) - HLS.js will automatically retry
+        if (!data.fatal && data.details === 'fragLoadTimeOut') {
+          // HLS.js handles retries automatically, no action needed
+          return;
+        }
+        
+        // Handle other non-fatal errors that might need recovery
+        if (!data.fatal && (data.details === 'fragLoadError' || data.details === 'fragParsingError')) {
+          // HLS.js will retry automatically
           return;
         }
         
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.warn('Network error, attempting to recover...');
-              try {
-                hlsInstance.startLoad();
-              } catch (e) {
-                console.error('Failed to recover from network error:', e);
-                hidePlayer();
-                showError('Playback Error', 'Network error. Please check your connection and try again.');
+              // Don't retry immediately if it's a 429 (handled above)
+              if (!is429Error) {
+                console.warn('Fatal network error, attempting to recover...');
+                try {
+                  hlsInstance.startLoad();
+                } catch (e) {
+                  console.error('Failed to recover from network error:', e);
+                  hidePlayer();
+                  showError('Playback Error', 'Network error. Please check your connection and try again.');
+                }
               }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('Media error, attempting to recover...');
+              console.warn('Fatal media error, attempting to recover...');
               try {
                 hlsInstance.recoverMediaError();
               } catch (e) {
@@ -1642,6 +1729,8 @@ function showPlayer(streamUrl) {
       });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS support (Safari)
+      videoPlayer.muted = false;
+      videoPlayer.volume = 1.0;
       videoPlayer.src = streamUrl;
       videoPlayer.play().catch(console.error);
       
@@ -1660,6 +1749,8 @@ function showPlayer(streamUrl) {
     }
   } else {
     // Regular video file
+    videoPlayer.muted = false;
+    videoPlayer.volume = 1.0;
     videoPlayer.src = streamUrl;
     videoPlayer.play().catch(console.error);
     
@@ -2195,7 +2286,10 @@ function showHomepage() {
   const listsContainer = document.querySelector('.lists-container');
   if (listsContainer) listsContainer.classList.add('hidden');
   // Refresh continue watching section to show latest progress
-  loadContinueWatching();
+  // Use a small delay to ensure DOM is ready
+  setTimeout(() => {
+    loadContinueWatching();
+  }, 50);
 }
 
 function showLoading(text = 'Loading...') {
@@ -2306,14 +2400,43 @@ function saveWatchProgress() {
   };
   
   const key = `watch_progress_${currentMediaType}_${currentMovie.id}`;
-  localStorage.setItem(key, JSON.stringify(watchProgress));
   
-  // Also maintain a list of keys for quick lookup
-  const progressList = JSON.parse(localStorage.getItem('watch_progress_list') || '[]');
-  const listKey = `${currentMediaType}_${currentMovie.id}`;
-  if (!progressList.includes(listKey)) {
-    progressList.push(listKey);
-    localStorage.setItem('watch_progress_list', JSON.stringify(progressList));
+  try {
+    localStorage.setItem(key, JSON.stringify(watchProgress));
+    
+    // Also maintain a list of keys for quick lookup
+    const progressList = JSON.parse(localStorage.getItem('watch_progress_list') || '[]');
+    const listKey = `${currentMediaType}_${currentMovie.id}`;
+    if (!progressList.includes(listKey)) {
+      progressList.push(listKey);
+      localStorage.setItem('watch_progress_list', JSON.stringify(progressList));
+    }
+  } catch (error) {
+    console.error('Error saving watch progress:', error);
+    // If localStorage is full, try to clean up old entries
+    if (error.name === 'QuotaExceededError') {
+      try {
+        const allProgress = getAllWatchProgress();
+        // Keep only the 20 most recent items
+        const toKeep = allProgress.slice(0, 20);
+        const toRemove = allProgress.slice(20);
+        
+        toRemove.forEach(item => {
+          removeWatchProgress(item.id, item.mediaType);
+        });
+        
+        // Retry saving
+        localStorage.setItem(key, JSON.stringify(watchProgress));
+        const progressList = JSON.parse(localStorage.getItem('watch_progress_list') || '[]');
+        const listKey = `${currentMediaType}_${currentMovie.id}`;
+        if (!progressList.includes(listKey)) {
+          progressList.push(listKey);
+          localStorage.setItem('watch_progress_list', JSON.stringify(progressList));
+        }
+      } catch (retryError) {
+        console.error('Failed to save watch progress after cleanup:', retryError);
+      }
+    }
   }
 }
 
@@ -2337,24 +2460,99 @@ function getWatchProgress(id, mediaType) {
 }
 
 function getAllWatchProgress() {
-  const progressList = JSON.parse(localStorage.getItem('watch_progress_list') || '[]');
-  const progress = [];
-  
-  for (const listKey of progressList) {
-    const [mediaType, id] = listKey.split('_');
-    const key = `watch_progress_${mediaType}_${id}`;
-    const data = localStorage.getItem(key);
-    if (data) {
-      try {
-        progress.push(JSON.parse(data));
-      } catch (e) {
-        console.error('Error parsing watch progress:', e);
+  try {
+    const progressList = JSON.parse(localStorage.getItem('watch_progress_list') || '[]');
+    const progress = [];
+    const validListKeys = [];
+    const foundKeys = new Set(); // Track keys we've found
+    
+    // First, try to get items from the list
+    for (const listKey of progressList) {
+      const parts = listKey.split('_');
+      if (parts.length < 2) continue; // Skip invalid format
+      
+      const mediaType = parts[0];
+      const id = parts.slice(1).join('_'); // Handle IDs that might contain underscores
+      const key = `watch_progress_${mediaType}_${id}`;
+      const data = localStorage.getItem(key);
+      
+      if (data) {
+        try {
+          const progressData = JSON.parse(data);
+          // Validate progress data has required fields (relaxed validation)
+          if (progressData && progressData.id && progressData.mediaType && 
+              typeof progressData.currentTime === 'number' && 
+              typeof progressData.duration === 'number' &&
+              progressData.currentTime >= 0 && progressData.duration > 0) {
+            progress.push(progressData);
+            validListKeys.push(listKey);
+            foundKeys.add(key);
+          } else {
+            // Invalid progress data, remove it
+            localStorage.removeItem(key);
+          }
+        } catch (e) {
+          console.error('Error parsing watch progress:', e);
+          // Remove corrupted data
+          localStorage.removeItem(key);
+        }
+      } else {
+        // Progress item doesn't exist, remove from list
+        // (list will be cleaned up below)
       }
     }
+    
+    // Fallback: Scan all localStorage keys to find watch progress items
+    // This helps recover items if the list was lost or corrupted
+    if (progress.length === 0 || progressList.length === 0) {
+      console.log('Watch progress list empty or corrupted, scanning localStorage...');
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('watch_progress_') && !foundKeys.has(key)) {
+          try {
+            const data = localStorage.getItem(key);
+            if (data) {
+              const progressData = JSON.parse(data);
+              // Validate progress data
+              if (progressData && progressData.id && progressData.mediaType && 
+                  typeof progressData.currentTime === 'number' && 
+                  typeof progressData.duration === 'number' &&
+                  progressData.currentTime >= 0 && progressData.duration > 0) {
+                progress.push(progressData);
+                // Rebuild the list key
+                const listKey = `${progressData.mediaType}_${progressData.id}`;
+                if (!validListKeys.includes(listKey)) {
+                  validListKeys.push(listKey);
+                }
+                foundKeys.add(key);
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing watch progress from key:', key, e);
+          }
+        }
+      }
+      
+      // Rebuild the list if we found items
+      if (validListKeys.length > 0) {
+        localStorage.setItem('watch_progress_list', JSON.stringify(validListKeys));
+        console.log(`Rebuilt watch progress list with ${validListKeys.length} items`);
+      }
+    }
+    
+    // Clean up the list if there were orphaned entries
+    if (validListKeys.length !== progressList.length && validListKeys.length > 0) {
+      localStorage.setItem('watch_progress_list', JSON.stringify(validListKeys));
+    }
+    
+    // Sort by most recently watched
+    const sorted = progress.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    console.log(`getAllWatchProgress: Found ${sorted.length} items`);
+    return sorted;
+  } catch (error) {
+    console.error('Error getting watch progress:', error);
+    return [];
   }
-  
-  // Sort by most recently watched
-  return progress.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }
 
 // ==================== HOMEPAGE ====================
@@ -2634,39 +2832,83 @@ function setupUpcomingCarousel() {
 async function loadContinueWatching() {
   const container = document.getElementById('continue-watching');
   const section = document.getElementById('continue-watching-section');
-  if (!container || !section) return;
-  
-  const progressItems = getAllWatchProgress();
-  
-  if (progressItems.length === 0) {
-    section.style.display = 'none';
+  if (!container || !section) {
+    // Retry after a short delay if DOM isn't ready
+    if (document.readyState === 'loading') {
+      setTimeout(loadContinueWatching, 100);
+      return;
+    }
+    console.warn('Continue watching: Container or section not found');
     return;
   }
   
-  section.style.display = 'block';
-  container.innerHTML = '<div class="cards-loading"><div class="loader-small"></div></div>';
-  
   try {
-    // Fetch full details for each item from TMDB
-    const itemsWithDetails = await Promise.all(
-      progressItems.slice(0, 10).map(async (progress) => {
-        try {
-          const response = await fetch(
-            `${getAPIBaseURL()}/${progress.mediaType}/${progress.id}?api_key=${TMDB_API_KEY}`
-          );
-          const details = await response.json();
-          return {
-            ...details,
-            watchProgress: progress
-          };
-        } catch (error) {
-          console.error(`Failed to fetch ${progress.mediaType} ${progress.id}:`, error);
-          return null;
+    const progressItems = getAllWatchProgress();
+    console.log(`Continue watching: Found ${progressItems.length} total progress items`);
+    
+    // Exclude the first item (shown in hero section) if there are multiple items
+    // If there's only one item, don't show continue watching (it's in hero)
+    const itemsToShow = progressItems.length > 1 ? progressItems.slice(1, 11) : [];
+    console.log(`Continue watching: Will show ${itemsToShow.length} items (excluding hero)`);
+    
+    if (itemsToShow.length === 0) {
+      console.log('Continue watching: No items to show, hiding section');
+      section.style.display = 'none';
+      return;
+    }
+    
+    section.style.display = 'block';
+    container.innerHTML = '<div class="cards-loading"><div class="loader-small"></div></div>';
+    
+    // Fetch full details for each item from TMDB with retry logic
+    const itemsWithDetails = await Promise.allSettled(
+      itemsToShow.map(async (progress) => {
+        // Retry up to 2 times for failed requests
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const apiBase = getAPIBaseURL();
+            const response = await fetch(
+              `${apiBase}/${progress.mediaType}/${progress.id}?api_key=${TMDB_API_KEY}`,
+              { 
+                signal: AbortSignal.timeout(10000) // 10 second timeout
+              }
+            );
+            
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const details = await response.json();
+            
+            // Validate response has required fields
+            if (!details || !details.id) {
+              throw new Error('Invalid response data');
+            }
+            
+            return {
+              ...details,
+              watchProgress: progress
+            };
+          } catch (error) {
+            lastError = error;
+            if (attempt < 2) {
+              // Wait before retry (exponential backoff)
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+            }
+          }
         }
+        
+        // All retries failed
+        console.error(`Failed to fetch ${progress.mediaType} ${progress.id} after retries:`, lastError);
+        return null;
       })
     );
     
-    const validItems = itemsWithDetails.filter(item => item !== null);
+    // Extract successful results
+    const validItems = itemsWithDetails
+      .filter(result => result.status === 'fulfilled' && result.value !== null)
+      .map(result => result.value);
     
     if (validItems.length === 0) {
       section.style.display = 'none';
@@ -2677,6 +2919,8 @@ async function loadContinueWatching() {
     
     // Setup carousel navigation for continue watching
     setupCarouselNavigation('continue-watching');
+    
+    console.log(`Continue watching: Loaded ${validItems.length} items`);
   } catch (error) {
     console.error('Failed to load continue watching:', error);
     section.style.display = 'none';
@@ -2809,11 +3053,12 @@ function renderContinueWatchingCards(container, items) {
 }
 
 async function loadHomepage() {
-  // Load hero section first
+  // Load hero section first (most recent item)
   await loadHero();
-  // Load latest first, then continue watching, then other categories
-  await loadLatest();
+  // Load continue watching (all items except the one in hero)
   await loadContinueWatching();
+  // Load latest releases
+  await loadLatest();
   
   // Load all categories in parallel
   await Promise.all([

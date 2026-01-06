@@ -1,3 +1,72 @@
+// Suppress Electron cache warnings - must be at the very top
+// These warnings come from Chromium's internal logging (stderr), so we need to filter stderr
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+process.stderr.write = function(chunk, encoding, fd) {
+  if (typeof chunk === 'string') {
+    // Filter out cache-related warnings
+    if (chunk.includes('backend_impl.cc') || 
+        chunk.includes('Messed up entry found') || 
+        chunk.includes('Destroying invalid entry') ||
+        chunk.includes('WARNING:backend_impl')) {
+      return true; // Suppress these warnings
+    }
+  } else if (Buffer.isBuffer(chunk)) {
+    const str = chunk.toString();
+    if (str.includes('backend_impl.cc') || 
+        str.includes('Messed up entry found') || 
+        str.includes('Destroying invalid entry') ||
+        str.includes('WARNING:backend_impl')) {
+      return true; // Suppress these warnings
+    }
+  }
+  // Call original stderr.write for other output
+  return originalStderrWrite(chunk, encoding, fd);
+};
+
+// Also override console methods as backup
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
+console.warn = function(...args) {
+  const message = args.join(' ');
+  // Filter out cache-related warnings
+  if (message.includes('backend_impl.cc') || 
+      message.includes('Messed up entry found') || 
+      message.includes('Destroying invalid entry') ||
+      message.includes('WARNING:backend_impl')) {
+    return; // Suppress these warnings
+  }
+  // Call original console.warn for other warnings
+  originalConsoleWarn.apply(console, args);
+};
+
+console.error = function(...args) {
+  const message = args.join(' ');
+  // Filter out cache-related warnings from error logs too
+  if (message.includes('backend_impl.cc') || 
+      message.includes('Messed up entry found') || 
+      message.includes('Destroying invalid entry') ||
+      message.includes('WARNING:backend_impl')) {
+    return; // Suppress these warnings
+  }
+  // Call original console.error for other errors
+  originalConsoleError.apply(console, args);
+};
+
+console.log = function(...args) {
+  const message = args.join(' ');
+  // Filter out cache-related warnings from log output too
+  if (message.includes('backend_impl.cc') || 
+      message.includes('Messed up entry found') || 
+      message.includes('Destroying invalid entry') ||
+      message.includes('WARNING:backend_impl')) {
+    return; // Suppress these warnings
+  }
+  // Call original console.log for other logs
+  originalConsoleLog.apply(console, args);
+};
+
 const { app, BrowserWindow, ipcMain, shell, net } = require('electron');
 const path = require('path');
 const http = require('http');
@@ -5,6 +74,10 @@ const fs = require('fs');
 const os = require('os');
 const url = require('url');
 const zlib = require('zlib');
+
+// Suppress Electron cache warnings via command line (must be before app is ready)
+app.commandLine.appendSwitch('disable-logging');
+app.commandLine.appendSwitch('log-level', '0');
 
 let mainWindow;
 let rpcClient = null;
@@ -37,10 +110,21 @@ function initDiscordRPC() {
     
     rpcClient.on('ready', () => {
       console.log('Discord Rich Presence connected');
+      // Set initial browsing status
+      updateDiscordPresence({
+        details: 'Browsing Library',
+        largeImageKey: 'cinestream',
+        largeImageText: 'CineStream'
+      });
+    });
+    
+    rpcClient.on('error', (error) => {
+      console.error('Discord RPC error:', error);
     });
     
     rpcClient.login({ clientId: DISCORD_CLIENT_ID }).catch(err => {
       console.error('Failed to connect to Discord:', err);
+      console.error('Make sure Discord is running and the Client ID is correct');
       rpcClient = null;
     });
   } catch (error) {
@@ -50,19 +134,50 @@ function initDiscordRPC() {
 }
 
 // Update Discord Rich Presence
-function updateDiscordPresence(details, state, largeImageKey, startTimestamp) {
-  if (!rpcClient) return;
+function updateDiscordPresence(presence) {
+  if (!rpcClient) {
+    console.log('Discord RPC client not available - cannot update presence');
+    return;
+  }
+  
+  if (!presence) {
+    console.warn('No presence data provided');
+    return;
+  }
   
   try {
-    rpcClient.setActivity({
-      details: details,
-      state: state,
-      largeImageKey: largeImageKey || 'cinestream',
-      largeImageText: 'CineStream',
-      startTimestamp: startTimestamp,
-      buttons: [
-        { label: 'GitHub Repository', url: 'https://github.com/goonernator/CineStream' }
-      ]
+    const activity = {
+      details: presence.details || 'Browsing',
+      largeImageKey: presence.largeImageKey || 'cinestream',
+      largeImageText: presence.largeImageText || 'CineStream'
+    };
+    
+    // Add state if provided
+    if (presence.state) {
+      activity.state = presence.state;
+    }
+    
+    // Add timestamps if provided
+    if (presence.startTimestamp) {
+      activity.startTimestamp = presence.startTimestamp;
+    }
+    if (presence.endTimestamp) {
+      activity.endTimestamp = presence.endTimestamp;
+    }
+    
+    // Add small image if provided
+    if (presence.smallImageKey) {
+      activity.smallImageKey = presence.smallImageKey;
+      activity.smallImageText = presence.smallImageText;
+    }
+    
+    // Add buttons if provided (max 2 buttons)
+    if (presence.buttons && Array.isArray(presence.buttons) && presence.buttons.length > 0) {
+      activity.buttons = presence.buttons.slice(0, 2);
+    }
+    
+    rpcClient.setActivity(activity).catch(err => {
+      console.error('Error setting Discord activity:', err);
     });
   } catch (error) {
     console.error('Error updating Discord presence:', error.message);
@@ -922,12 +1037,7 @@ ipcMain.handle('network-get-local-ip', () => {
 // Discord Rich Presence
 ipcMain.handle('discord-set-presence', (event, presence) => {
   if (presence) {
-    updateDiscordPresence(
-      presence.details,
-      presence.state,
-      presence.largeImageKey,
-      presence.startTimestamp
-    );
+    updateDiscordPresence(presence);
   }
 });
 
